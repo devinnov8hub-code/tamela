@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/scribe-api/:path*",
+      "destination": "https://tamela-scribe-mvp-1088499026862.us-east1.run.app/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
