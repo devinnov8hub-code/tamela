@@ -1,5 +1,8 @@
 <script setup>
+import { computed } from "vue";
 import AppShell from "../components/AppShell.vue";
+import { authUser } from "../session/authSession";
+import { adminClinicians } from "../data/adminClinicians";
 
 const stats = [
   { label: "Total Reports", value: 125, color: "blue", icon: "file-lines" },
@@ -80,6 +83,47 @@ const rows = [
   },
 ];
 
+const signedInUserName = computed(() => {
+  const user = authUser.value;
+  if (!user) return "Clinician";
+
+  // Prefer our clinicians dataset (most reliable for this app) when emails match.
+  if (typeof user.email === "string" && user.email.includes("@")) {
+    const email = user.email.toLowerCase();
+    const clinician = adminClinicians.find((c) => (c.email ?? "").toLowerCase() === email);
+    if (clinician?.name) return clinician.name;
+  }
+
+  const metadata = user.user_metadata ?? {};
+
+  // Try common user_metadata keys across email/password and OAuth providers.
+  const candidates = [
+    metadata.full_name,
+    metadata.fullName,
+    metadata.display_name,
+    metadata.displayName,
+    metadata.name,
+    metadata.user_name,
+    metadata.username,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+
+  // Compose from first/last name if present.
+  const first = metadata.first_name ?? metadata.firstName ?? metadata.first;
+  const last = metadata.last_name ?? metadata.lastName ?? metadata.last;
+  if (typeof first === "string" && first.trim() && typeof last === "string" && last.trim()) {
+    return `${first.trim()} ${last.trim()}`;
+  }
+
+  if (typeof user.email === "string" && user.email.includes("@")) {
+    return user.email.split("@")[0];
+  }
+
+  return "Clinician";
+});
+
 </script>
 
 <template>
@@ -90,7 +134,7 @@ const rows = [
   >
       <section class="welcome-row">
         <div>
-          <h2>Welcome Back Dr Grace.</h2>
+          <h2>Welcome Back {{ signedInUserName }}.</h2>
           <p>Review of latest activity and report status.</p>
         </div>
         <button class="export-btn">Export to CSV</button>

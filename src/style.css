@@ -862,7 +862,7 @@ th {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: linear-gradient(145deg, #071225 0%, #0c2744 45%, #0a1628 100%);
+  background: linear-gradient(145deg, #123366 0%, #1d4d8f 45%, #12386d 100%);
 }
 
 .login-brand-glow {
@@ -874,8 +874,8 @@ th {
   transform: translateY(-50%);
   background: radial-gradient(
     circle,
-    rgba(251, 146, 60, 0.35) 0%,
-    rgba(59, 130, 246, 0.12) 42%,
+    rgba(251, 146, 60, 0.32) 0%,
+    rgba(147, 197, 253, 0.2) 42%,
     transparent 70%
   );
   pointer-events: none;
@@ -886,7 +886,7 @@ th {
   width: min(78%, 380px);
   max-width: 380px;
   height: auto;
-  opacity: 0.22;
+  opacity: 1;
   filter: grayscale(0.2);
 }
 
@@ -921,7 +921,7 @@ th {
   margin: 0 0 10px;
   font-size: 14px;
   font-weight: 600;
-  color: #3b82f6;
+  color: #2d5ec7;
   letter-spacing: 0.02em;
 }
 
@@ -936,7 +936,7 @@ th {
 }
 
 .login-register-cta {
-  color: #2563eb;
+  color: #2d5ec7;
   font-weight: 600;
   cursor: pointer;
 }
@@ -972,9 +972,9 @@ th {
 }
 
 .login-role-btn.is-selected {
-  border-color: #93c5fd;
-  background: #eff6ff;
-  color: #2563eb;
+  border-color: #9ebaf0;
+  background: #edf3ff;
+  color: #2d5ec7;
 }
 
 .login-form label {
@@ -1047,7 +1047,7 @@ th {
 .link-btn {
   border: 0;
   background: transparent;
-  color: #2563eb;
+  color: #2d5ec7;
   font-size: 13px;
   cursor: pointer;
 }
@@ -1058,7 +1058,7 @@ th {
   height: 44px;
   border: 0;
   border-radius: 8px;
-  background: #3b82f6;
+  background: #4d81e0;
   color: #ffffff;
   font-weight: 700;
   font-size: 15px;
@@ -1066,7 +1066,7 @@ th {
 }
 
 .primary-btn:hover {
-  background: #2563eb;
+  background: #2d5ec7;
 }
 
 .primary-btn:disabled {
@@ -1192,7 +1192,7 @@ th {
 
   .login-brand-mark {
     width: min(200px, 55%);
-    opacity: 0.35;
+    opacity: 1;
   }
 
   .login-form-panel {
