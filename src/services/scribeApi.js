@@ -7,7 +7,10 @@ export const SCRIBE_TRANSCRIBE_PATH = "/api/audio/transcribe";
 export function getScribeApiBase() {
   const raw = import.meta.env.VITE_SCRIBE_API_BASE?.trim();
   if (raw) return raw;
-  return import.meta.env.DEV ? DEV_PROXY_BASE : DEFAULT_BASE;
+  // Use same-origin proxy by default to avoid browser CORS in both dev and production.
+  // - Dev proxy is configured in `vite.config.js`
+  // - Production proxy is configured in `vercel.json`
+  return DEV_PROXY_BASE;
 }
 
 function transcribeUrl(base = getScribeApiBase()) {
