@@ -79,17 +79,10 @@ async function handleCreateAccount() {
         </header>
 
         <div class="login-role-toggle" role="group" aria-label="Account type">
+          
           <button
             type="button"
-            class="login-role-btn"
-            :class="{ 'is-selected': accountRole === 'clinician' }"
-            @click="accountRole = 'clinician'"
-          >
-            <font-awesome-icon :icon="['fas', 'user']" />
-            Clinician
-          </button>
-          <button
-            type="button"
+            
             class="login-role-btn"
             :class="{ 'is-selected': accountRole === 'admin' }"
             @click="accountRole = 'admin'"

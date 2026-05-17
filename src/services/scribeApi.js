@@ -116,3 +116,68 @@ export function extractTranscriptionText(data) {
     return String(data);
   }
 }
+
+// Lightweight client-side metadata suggestion helper
+export function suggestMetadata(text = '', opts = {}) {
+  const out = {}
+  if (!text || typeof text !== 'string') return out
+
+  const firstSentence = text.trim().split(/\.|\n/).find(Boolean)
+  if (firstSentence) out.case_title = firstSentence.trim().slice(0, 120)
+
+  const lowered = text.toLowerCase()
+  const mapping = [
+    { keys: ['follow-up', 'follow up', 'followup'], val: 'follow_up' },
+    { keys: ['consult', 'consultation', 'see patient', 'seen for'], val: 'consultation' },
+    { keys: ['diagnos', 'diagnosis'], val: 'diagnosis' },
+    { keys: ['treatment plan', 'plan to', 'recommend'], val: 'treatment_plan' },
+    { keys: ['procedure', 'surgery', 'operation'], val: 'procedure' },
+    { keys: ['assessment', 'assess', 'review'], val: 'assessment' },
+  ]
+
+  for (const m of mapping) {
+    if (m.keys.some((kw) => lowered.includes(kw))) {
+      out.session_type = m.val
+      break
+    }
+  }
+
+  if (opts.sessionTypeOptions && out.session_type) {
+    const found = opts.sessionTypeOptions.find((o) => o.value === out.session_type)
+    if (!found) delete out.session_type
+  }
+
+  return out
+}
+
+// Server-side metadata extraction (AI)
+const METADATA_PATH = '/api/ai/metadata'
+
+function metadataUrl(base = getScribeApiBase()) {
+  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base
+  if (normalizedBase.startsWith('/')) return `${normalizedBase}${METADATA_PATH}`
+  return new URL(METADATA_PATH, `${normalizedBase}/`).href
+}
+
+export async function fetchMetadataFromServer(text, opts = {}) {
+  const base = opts.base ?? getScribeApiBase()
+  const token = opts.token ?? import.meta.env.VITE_SCRIBE_API_TOKEN?.trim() ?? DEFAULT_BEARER_TOKEN
+  const url = metadataUrl(base)
+
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ text }),
+    signal: opts.signal,
+  })
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Metadata extraction failed (${res.status}): ${body.slice(0, 800)}`)
+  }
+
+  return res.json()
+}

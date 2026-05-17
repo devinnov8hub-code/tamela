@@ -105,8 +105,7 @@ function togglePasswordVisible() {
           <img class="login-logo-header" src="/logo-with-text.png" alt="Tamela" />
           <p class="login-tagline">Ai Clinical Assistant</p>
           <p class="login-register-line">
-            <span class="login-register-muted">Don't have an account?</span>
-            <router-link class="login-register-cta" :to="{ name: 'register' }">Register Now &gt;</router-link>
+            <span class="login-register-muted">Account creation is managed by your organization.</span>
           </p>
         </header>
 
