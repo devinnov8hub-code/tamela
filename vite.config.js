@@ -8,6 +8,7 @@ export default defineConfig({
       "/scribe-api": {
         target: "https://tamela-scribe-mvp-1088499026862.us-east1.run.app",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/scribe-api/, ""),
       },
     },

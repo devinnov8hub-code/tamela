@@ -4,13 +4,13 @@ const DEFAULT_BEARER_TOKEN = "Secure@innov8-iwyer6wegbcfw8y";
 const DEV_PROXY_BASE = "/scribe-api";
 export const SCRIBE_TRANSCRIBE_PATH = "/api/audio/transcribe";
 
+/** Public Scribe host (vite/vercel proxy target). Browser calls use DEV_PROXY_BASE to avoid CORS. */
 export function getScribeApiBase() {
-  const raw = import.meta.env.VITE_SCRIBE_API_BASE?.trim();
-  if (raw) return raw;
-  // Use same-origin proxy by default to avoid browser CORS in both dev and production.
-  // - Dev proxy is configured in `vite.config.js`
-  // - Production proxy is configured in `vercel.json`
   return DEV_PROXY_BASE;
+}
+
+export function getScribeApiDirectBase() {
+  return DEFAULT_BASE;
 }
 
 function transcribeUrl(base = getScribeApiBase()) {
@@ -39,7 +39,7 @@ function extensionForMime(mime = "") {
  * @returns {Promise<Record<string, unknown>>}
  */
 export async function transcribeAudio(file, opts = {}) {
-  const token = opts.token ?? import.meta.env.VITE_SCRIBE_API_TOKEN?.trim() ?? DEFAULT_BEARER_TOKEN;
+  const token = opts.token ?? DEFAULT_BEARER_TOKEN;
   const body = new FormData();
   const mime = file?.type || "audio/webm";
   const safeName =

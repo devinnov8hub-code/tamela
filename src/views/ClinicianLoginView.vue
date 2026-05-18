@@ -126,7 +126,7 @@ function togglePasswordVisible() {
           <img class="login-logo-header" src="/logo-with-text.png" alt="Tamela" />
           <p class="login-tagline">Ai Clinical Assistant</p>
           <p class="login-register-line">
-            <span class="login-register-muted">New hospital on Taymela?</span>
+            <span class="login-register-muted">New hospital on Tamela?</span>
             <router-link :to="{ name: 'auth-admin-register' }" class="login-register-cta">Register your hospital &gt;</router-link>
           </p>
           <p class="login-register-line login-register-muted-only">

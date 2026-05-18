@@ -29,7 +29,7 @@ onUnmounted(() => {
 <template>
   <div v-if="!ready" class="app-boot" aria-live="polite" aria-busy="true">
     <p>Loading…</p>
-    <p v-if="isSupabaseConfigured" class="app-boot-hint">Connecting to Taymela…</p>
+    <p v-if="isSupabaseConfigured" class="app-boot-hint">Connecting to Tamela…</p>
     <p v-else class="app-boot-hint app-boot-hint--warn">
       Supabase is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env, then restart the dev server.
     </p>

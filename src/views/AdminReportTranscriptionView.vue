@@ -1,16 +1,24 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
 import { fetchReportById, fetchReportTranscription } from "../services/reportService.js";
+import {
+  buildClinicalNotePlainText,
+  copyTextToClipboard,
+  downloadTextAsPdf,
+} from "../utils/clinicalNoteExport.js";
 import { formatReportDate } from "../utils/formatDateTime.js";
 
 const route = useRoute();
 const { hospitalId } = useAuth();
 
 const reportId = computed(() => String(route.params.reportId ?? ""));
+const actionMessage = ref("");
+const copyInProgress = ref(false);
+const exportInProgress = ref(false);
 
 const {
   data: report,
@@ -67,6 +75,77 @@ const formattedSections = computed(() => {
 });
 
 const isLoading = computed(() => reportLoading.value || transcriptionLoading.value);
+
+const exportableText = computed(() => {
+  const row = report.value;
+  if (!row) return "";
+
+  const caseRef = [
+    `Report ID: ${row.reportId}`,
+    row.clinicianName,
+    row.department,
+    row.createdAt ? `Created ${formatReportDate(row.createdAt)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return buildClinicalNotePlainText({
+    title: row.caseTitle,
+    caseRef,
+    transcript: transcriptionText.value,
+    sections: formattedSections.value,
+  });
+});
+
+const exportDisabled = computed(
+  () =>
+    isLoading.value ||
+    copyInProgress.value ||
+    exportInProgress.value ||
+    !exportableText.value.trim()
+);
+
+function flashAction(message) {
+  actionMessage.value = message;
+  window.setTimeout(() => {
+    if (actionMessage.value === message) {
+      actionMessage.value = "";
+    }
+  }, 2500);
+}
+
+async function handleSmartCopy() {
+  if (exportDisabled.value) return;
+
+  copyInProgress.value = true;
+  actionMessage.value = "";
+
+  try {
+    await copyTextToClipboard(exportableText.value);
+    flashAction("Copied to clipboard.");
+  } catch (error) {
+    flashAction(error instanceof Error ? error.message : "Copy failed.");
+  } finally {
+    copyInProgress.value = false;
+  }
+}
+
+async function handleExportPdf() {
+  if (exportDisabled.value) return;
+
+  exportInProgress.value = true;
+  actionMessage.value = "";
+
+  try {
+    const id = report.value?.reportId?.replace(/[^\w-]+/g, "-") || "report";
+    await downloadTextAsPdf(exportableText.value, `${id}.pdf`);
+    flashAction("PDF download started.");
+  } catch (error) {
+    flashAction(error instanceof Error ? error.message : "Export failed.");
+  } finally {
+    exportInProgress.value = false;
+  }
+}
 </script>
 
 <template>
@@ -87,17 +166,32 @@ const isLoading = computed(() => reportLoading.value || transcriptionLoading.val
     <template v-else-if="report">
       <section class="editor-toolbar">
         <div class="toolbar-left">
-          <button type="button" class="toolbar-btn">↶</button>
-          <button type="button" class="toolbar-btn">↷</button>
+          <button type="button" class="toolbar-btn" disabled title="Coming soon">↶</button>
+          <button type="button" class="toolbar-btn" disabled title="Coming soon">↷</button>
           <span class="divider"></span>
           <span class="toolbar-label">Normal Text</span>
-          <button type="button" class="toolbar-btn">B</button>
-          <button type="button" class="toolbar-btn">I</button>
-          <button type="button" class="toolbar-btn">U</button>
+          <button type="button" class="toolbar-btn" disabled title="Coming soon">B</button>
+          <button type="button" class="toolbar-btn" disabled title="Coming soon">I</button>
+          <button type="button" class="toolbar-btn" disabled title="Coming soon">U</button>
         </div>
         <div class="toolbar-actions">
-          <button type="button" class="secondary-btn small">Smart Copy</button>
-          <button type="button" class="export-btn small">Export ToPDF</button>
+          <p v-if="actionMessage" class="transcription-action-msg" role="status">{{ actionMessage }}</p>
+          <button
+            type="button"
+            class="secondary-btn small"
+            :disabled="exportDisabled"
+            @click="handleSmartCopy"
+          >
+            {{ copyInProgress ? "Copying…" : "Smart Copy" }}
+          </button>
+          <button
+            type="button"
+            class="export-btn small"
+            :disabled="exportDisabled"
+            @click="handleExportPdf"
+          >
+            {{ exportInProgress ? "Exporting…" : "Export to PDF" }}
+          </button>
         </div>
       </section>
 
@@ -133,5 +227,19 @@ const isLoading = computed(() => reportLoading.value || transcriptionLoading.val
 .transcription-body {
   white-space: pre-wrap;
   line-height: 1.6;
+}
+
+.transcription-action-msg {
+  margin: 0 8px 0 0;
+  font-size: 13px;
+  color: #059669;
+  font-weight: 600;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>
