@@ -2,7 +2,11 @@
 import AppShell from "../components/AppShell.vue";
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
-import { clearScribeSession, setPendingAudioForTranscription } from "../session/scribeSession.js";
+import {
+  clearScribeSession,
+  setPendingAudioForTranscription,
+  setRecordingSessionType,
+} from "../session/scribeSession.js";
 
 const waveformBars = [30, 56, 80, 48, 34, 42, 92, 118, 96, 52, 76, 58, 36, 28];
 const router = useRouter();
@@ -157,6 +161,7 @@ function finalizeBlobAndNavigate() {
     return;
   }
 
+  setRecordingSessionType("Live Recording");
   setPendingAudioForTranscription(blob);
   isFinishing.value = false;
   isRecording.value = false;
@@ -191,6 +196,7 @@ function onFileSelected(ev) {
   const file = ev.target?.files?.[0];
   ev.target.value = "";
   if (!file) return;
+  setRecordingSessionType("Audio Upload");
   setPendingAudioForTranscription(file);
   router.push({ path: "/clinician/recording/transcription", query: { loading: "1" } });
 }

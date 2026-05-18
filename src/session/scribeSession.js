@@ -2,9 +2,27 @@ let pendingAudioBlob = null;
 let lastTranscript = "";
 let lastTranscriptionError = "";
 let lastRaw = null;
+let recordingSessionType = "Live Recording";
+let lastSavedReportId = "";
 
 export function setPendingAudioForTranscription(blob) {
   pendingAudioBlob = blob;
+}
+
+export function setRecordingSessionType(type) {
+  recordingSessionType = type || "Live Recording";
+}
+
+export function getRecordingSessionType() {
+  return recordingSessionType;
+}
+
+export function setLastSavedReportId(reportUuid) {
+  lastSavedReportId = reportUuid ? String(reportUuid) : "";
+}
+
+export function getLastSavedReportId() {
+  return lastSavedReportId;
 }
 
 export function peekPendingAudioForTranscription() {
@@ -43,4 +61,6 @@ export function clearScribeSession() {
   lastTranscript = "";
   lastTranscriptionError = "";
   lastRaw = null;
+  recordingSessionType = "Live Recording";
+  lastSavedReportId = "";
 }

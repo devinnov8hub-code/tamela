@@ -1,8 +1,15 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useQueryClient } from "@tanstack/vue-query";
 import AppShell from "../components/AppShell.vue";
+import { useAuth } from "../composables/useAuth.js";
 import { extractTranscriptionText, transcribeAudio } from "../services/scribeApi.js";
+import {
+  fetchReportById,
+  fetchReportTranscription,
+  saveReportWithTranscription,
+} from "../services/reportService.js";
 import {
   buildClinicalNotePlainText,
   copyTextToClipboard,
@@ -10,7 +17,10 @@ import {
 } from "../utils/clinicalNoteExport.js";
 import {
   clearPendingAudioForTranscription,
+  getLastSavedReportId,
   getLastTranscription,
+  getRecordingSessionType,
+  setLastSavedReportId,
   setLastTranscription,
   setLastTranscriptionError,
   takePendingAudioForTranscription,
@@ -18,13 +28,19 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const queryClient = useQueryClient();
+const { hospitalId, user, profile } = useAuth();
+
 const loadingFromQuery = computed(() => route.query.loading === "1");
+const reportIdFromRoute = computed(() => String(route.query.reportId ?? "").trim());
 const isLoading = ref(loadingFromQuery.value);
 const transcriptText = ref("");
 const errorText = ref("");
+const saveErrorText = ref("");
 const actionMessage = ref("");
 const copyInProgress = ref(false);
 const exportInProgress = ref(false);
+const savedReport = ref(null);
 
 const last = getLastTranscription();
 if (last?.text) transcriptText.value = last.text;
@@ -66,16 +82,117 @@ const staticBlocks = [
   },
 ];
 
+const noteTitle = computed(() => savedReport.value?.caseTitle || "Clinical Consultation Note");
+const caseRefLabel = computed(() => {
+  if (savedReport.value?.reportId) {
+    return `Report ID: ${savedReport.value.reportId}`;
+  }
+  return "Report ID: (not saved yet)";
+});
+
 const exportableText = computed(() =>
   buildClinicalNotePlainText({
-    title: "Clinical Consultation Note",
-    caseRef: "Case Ref: #8821-JHK-2023",
+    title: noteTitle.value,
+    caseRef: caseRefLabel.value,
     transcript: transcriptText.value,
     error: errorText.value,
     sections: insightSections,
     blocks: staticBlocks,
   })
 );
+
+function buildFormattedTranscription() {
+  return {
+    sections: insightSections,
+    blocks: staticBlocks,
+  };
+}
+
+async function invalidateReportQueries() {
+  const hid = hospitalId.value;
+  const uid = user.value?.id;
+  if (!hid || !uid) return;
+
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["clinician-dashboard-reports", hid, uid] }),
+    queryClient.invalidateQueries({ queryKey: ["clinician-library-reports", hid, uid] }),
+    queryClient.invalidateQueries({ queryKey: ["admin-reports", hid] }),
+    queryClient.invalidateQueries({ queryKey: ["clinician-reports", hid, uid] }),
+  ]);
+}
+
+async function persistTranscription(text) {
+  saveErrorText.value = "";
+
+  const hid = hospitalId.value;
+  const uid = user.value?.id;
+  if (!hid || !uid) {
+    saveErrorText.value = "Could not save report: missing hospital or user context.";
+    return;
+  }
+
+  const { report, error } = await saveReportWithTranscription({
+    hospitalId: hid,
+    clinicianId: uid,
+    departmentId: profile.value?.department_id ?? null,
+    transcription: text,
+    formattedTranscription: buildFormattedTranscription(),
+    sessionType: getRecordingSessionType(),
+  });
+
+  if (error) {
+    saveErrorText.value =
+      error.message || "Transcription completed but could not be saved to the database.";
+    return;
+  }
+
+  savedReport.value = report;
+  setLastSavedReportId(report.id);
+  await invalidateReportQueries();
+}
+
+async function loadSavedReport(reportUuid) {
+  const hid = hospitalId.value;
+  if (!hid || !reportUuid) return;
+
+  isLoading.value = true;
+  errorText.value = "";
+  saveErrorText.value = "";
+
+  try {
+    const [{ report, error: reportError }, { transcription, error: transcriptionError }] =
+      await Promise.all([
+        fetchReportById(hid, reportUuid),
+        fetchReportTranscription(reportUuid),
+      ]);
+
+    if (reportError) throw reportError;
+    if (!report) {
+      errorText.value = "Report not found.";
+      return;
+    }
+
+    if (transcriptionError) throw transcriptionError;
+
+    savedReport.value = {
+      id: report.id,
+      reportId: report.reportId,
+      caseTitle: report.caseTitle,
+    };
+    setLastSavedReportId(report.id);
+
+    if (transcription?.transcription) {
+      transcriptText.value = String(transcription.transcription).trim();
+    } else {
+      transcriptText.value = "";
+      errorText.value = "No transcription saved for this report yet.";
+    }
+  } catch (error) {
+    errorText.value = error instanceof Error ? error.message : "Could not load report.";
+  } finally {
+    isLoading.value = false;
+  }
+}
 
 const exportDisabled = computed(
   () =>
@@ -128,7 +245,13 @@ async function handleExportPdf() {
 }
 
 async function loadTranscription() {
-  if (!loadingFromQuery.value) return;
+  const existingReportId = reportIdFromRoute.value || getLastSavedReportId();
+  if (!loadingFromQuery.value) {
+    if (existingReportId) {
+      await loadSavedReport(existingReportId);
+    }
+    return;
+  }
 
   const pendingAudio = takePendingAudioForTranscription();
   if (!pendingAudio) {
@@ -143,10 +266,16 @@ async function loadTranscription() {
   try {
     isLoading.value = true;
     errorText.value = "";
+    saveErrorText.value = "";
     const data = await transcribeAudio(pendingAudio);
     const text = extractTranscriptionText(data);
-    transcriptText.value = text || "Transcription succeeded but returned empty text.";
+    const normalized = text?.trim() || "";
+    transcriptText.value = normalized || "Transcription succeeded but returned empty text.";
     setLastTranscription(transcriptText.value, data);
+
+    if (normalized) {
+      await persistTranscription(normalized);
+    }
   } catch (error) {
     transcriptText.value = "";
     errorText.value = error instanceof Error ? error.message : "Transcription failed.";
@@ -154,7 +283,8 @@ async function loadTranscription() {
   } finally {
     isLoading.value = false;
     clearPendingAudioForTranscription();
-    router.replace({ path: "/clinician/recording/transcription" });
+    const nextQuery = savedReport.value?.id ? { reportId: savedReport.value.id } : {};
+    router.replace({ path: "/clinician/recording/transcription", query: nextQuery });
   }
 }
 
@@ -216,8 +346,9 @@ onMounted(loadTranscription);
           <div class="skeleton-line medium"></div>
         </template>
         <template v-else>
-          <h2>Clinical Consultation Note</h2>
-          <p class="case-ref">Case Ref: #8821-JHK-2023</p>
+          <h2>{{ noteTitle }}</h2>
+          <p class="case-ref">{{ caseRefLabel }}</p>
+          <p v-if="saveErrorText" class="save-error" role="alert">{{ saveErrorText }}</p>
 
           <template v-if="errorText">
             <h4>Transcription Error</h4>
@@ -252,6 +383,12 @@ onMounted(loadTranscription);
 <style scoped>
 .transcript-body {
   white-space: pre-wrap;
+}
+
+.save-error {
+  color: #b42318;
+  font-size: 0.9rem;
+  margin: 0 0 12px;
 }
 
 .transcription-action-msg {

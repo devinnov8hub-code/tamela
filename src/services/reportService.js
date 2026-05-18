@@ -203,6 +203,103 @@ export async function fetchReportTranscription(reportId) {
 }
 
 /**
+ * @param {string} [transcription]
+ */
+export function deriveCaseTitleFromTranscription(transcription) {
+  const trimmed = (transcription || "").trim();
+  if (!trimmed) {
+    return `Clinical session ${new Date().toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })}`;
+  }
+
+  const firstLine = trimmed.split(/\n/)[0].trim();
+  if (firstLine.length <= 100) return firstLine;
+  return `${firstLine.slice(0, 97)}...`;
+}
+
+export function generateReportId() {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `RPT-${stamp}-${suffix}`;
+}
+
+/**
+ * Persist a completed transcription to `reports` + `report_transcriptions`.
+ * @param {{
+ *   hospitalId: string,
+ *   clinicianId: string,
+ *   departmentId?: string | null,
+ *   transcription: string,
+ *   formattedTranscription?: unknown,
+ *   sessionType?: string,
+ *   caseTitle?: string,
+ * }} payload
+ */
+export async function saveReportWithTranscription(payload) {
+  const client = requireSupabase();
+  const {
+    hospitalId,
+    clinicianId,
+    departmentId = null,
+    transcription,
+    formattedTranscription = null,
+    sessionType = "Live Recording",
+    caseTitle,
+  } = payload;
+
+  const reportIdText = generateReportId();
+  const title = caseTitle || deriveCaseTitleFromTranscription(transcription);
+
+  const { data: report, error: reportError } = await client
+    .from("reports")
+    .insert({
+      hospital_id: hospitalId,
+      clinician_id: clinicianId,
+      department_id: departmentId,
+      report_id: reportIdText,
+      case_title: title,
+      session_type: sessionType,
+      status: "COMPLETED",
+      created_by: clinicianId,
+      updated_by: clinicianId,
+    })
+    .select("id, report_id, case_title, session_type, status, created_at")
+    .single();
+
+  if (reportError) {
+    return { report: null, error: reportError };
+  }
+
+  const { error: transcriptionError } = await client.from("report_transcriptions").insert({
+    report_id: report.id,
+    transcription,
+    formatted_transcription: formattedTranscription,
+    created_by: clinicianId,
+    updated_by: clinicianId,
+  });
+
+  if (transcriptionError) {
+    await client.from("reports").delete().eq("id", report.id);
+    return { report: null, error: transcriptionError };
+  }
+
+  return {
+    report: {
+      id: String(report.id),
+      reportId: report.report_id,
+      caseTitle: report.case_title,
+      sessionType: report.session_type,
+      status: mapReportStatusUi(report.status),
+      createdAt: report.created_at ?? null,
+    },
+    error: null,
+  };
+}
+
+/**
  * @param {string} hospitalId
  */
 export async function fetchAdminDashboardStats(hospitalId) {
