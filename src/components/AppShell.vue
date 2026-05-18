@@ -1,7 +1,7 @@
 <script setup>
 import { useRouter } from "vue-router";
 import { isSupabaseConfigured } from "../services/supabase";
-import { signOut } from "../session/authSession";
+import { useAuth } from "../composables/useAuth.js";
 
 defineProps({
   title: { type: String, required: true },
@@ -13,10 +13,11 @@ defineProps({
 });
 
 const router = useRouter();
+const { signOut } = useAuth();
 
 const navItems = [
-  { label: "Dashboard", to: "/dashboard", icon: "chart-line" },
-  { label: "Active Recording", to: "/recording/fresh", icon: "microphone" },
+  { label: "Dashboard", to: "/clinician/dashboard", icon: "chart-line" },
+  { label: "Active Recording", to: "/clinician/recording/fresh", icon: "microphone" },
 ];
 
 function navigate(item) {
@@ -26,7 +27,7 @@ function navigate(item) {
 
 async function handleLogout() {
   await signOut();
-  router.push({ name: "login" });
+  router.push({ name: "auth-login" });
 }
 </script>
 

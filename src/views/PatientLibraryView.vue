@@ -1,75 +1,150 @@
 <script setup>
+import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
+import { useQuery } from "@tanstack/vue-query";
 import AppShell from "../components/AppShell.vue";
+import { useAuth } from "../composables/useAuth.js";
+import { fetchDepartmentsByHospital } from "../services/departmentService.js";
+import { fetchReportsForClinician } from "../services/reportService.js";
+import { formatReportDate } from "../utils/formatDateTime.js";
 
-const filters = [
-  { key: "general", label: "General Medicine" },
-  { key: "radiology", label: "Radiology" },
-  { key: "er", label: "ER" },
-];
+const router = useRouter();
+const { displayName, hospitalId, user } = useAuth();
+const activeFilter = ref("all");
 
-const patients = [
-  { initials: "EA", name: "Esther Ade", session: "General Medicine", date: "Feb 21, 2026", clinician: "Dr Chisom Odogwu", status: "Active", tone: "green", avatarTone: "violet" },
-  { initials: "EA", name: "Esther Ade", session: "ER", date: "Feb 21, 2026", clinician: "RN, Maryam Saliu", status: "In Treatment", tone: "amber", avatarTone: "amber" },
-  { initials: "EA", name: "Esther Ade", session: "Radiology", date: "Feb 21, 2026", clinician: "Dr Chisom Odogwu", status: "Active", tone: "green", avatarTone: "pink" },
-  { initials: "EA", name: "Esther Ade", session: "General Medicine", date: "Feb 21, 2026", clinician: "Self", status: "In Treatment", tone: "amber", avatarTone: "lime" },
-  { initials: "EA", name: "Esther Ade", session: "ER", date: "Feb 21, 2026", clinician: "Self", status: "In Treatment", tone: "amber", avatarTone: "pink" },
-  { initials: "EA", name: "Esther Ade", session: "General Medicine", date: "Feb 21, 2026", clinician: "Dr Chisom Odogwu", status: "Active", tone: "green", avatarTone: "violet" },
-  { initials: "EA", name: "Esther Ade", session: "ER", date: "Feb 21, 2026", clinician: "Self", status: "Active", tone: "green", avatarTone: "amber" },
-  { initials: "EA", name: "Esther Ade", session: "Radiology", date: "Feb 21, 2026", clinician: "Self", status: "In Treatment", tone: "amber", avatarTone: "pink" },
-  { initials: "EA", name: "Esther Ade", session: "General Medicine", date: "Feb 21, 2026", clinician: "Self", status: "Discharged", tone: "gray", avatarTone: "lime" },
-  { initials: "EA", name: "Esther Ade", session: "General Medicine", date: "Feb 21, 2026", clinician: "Dr Chisom Odogwu", status: "Discharged", tone: "gray", avatarTone: "violet" },
-];
+const { data: reportsData, isLoading, isError, error: loadError } = useQuery({
+  queryKey: computed(() => ["clinician-library-reports", hospitalId.value, user.value?.id]),
+  enabled: computed(() => Boolean(hospitalId.value && user.value?.id)),
+  queryFn: async () => {
+    const { reports, error } = await fetchReportsForClinician(hospitalId.value, user.value.id);
+    if (error) throw error;
+    return reports;
+  },
+});
+
+const { data: departmentsData } = useQuery({
+  queryKey: computed(() => ["departments", hospitalId.value]),
+  enabled: computed(() => Boolean(hospitalId.value)),
+  queryFn: async () => {
+    const { departments, error } = await fetchDepartmentsByHospital(hospitalId.value);
+    if (error) throw error;
+    return departments;
+  },
+});
+
+const reports = computed(() => reportsData.value ?? []);
+
+const filters = computed(() => {
+  const base = [{ key: "all", label: "All cases" }];
+  const fromDepartments = (departmentsData.value ?? []).map((dept) => ({
+    key: dept.id,
+    label: dept.name,
+  }));
+  return [...base, ...fromDepartments];
+});
+
+function reportStatusUi(status) {
+  if (status === "completed") return { label: "Completed", tone: "green" };
+  if (status === "processing") return { label: "Processing", tone: "amber" };
+  return { label: "Draft", tone: "gray" };
+}
+
+function initialsFromTitle(title) {
+  const parts = String(title).split(/\s+/).filter(Boolean);
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("") || "—";
+}
+
+const libraryRows = computed(() => {
+  const list = reports.value;
+  const filtered =
+    activeFilter.value === "all"
+      ? list
+      : list.filter((row) => row.departmentId === activeFilter.value);
+
+  return filtered.map((row, index) => {
+    const status = reportStatusUi(row.status);
+    return {
+      id: row.id,
+      initials: initialsFromTitle(row.caseTitle),
+      name: row.caseTitle,
+      session: row.sessionType || row.department,
+      date: formatReportDate(row.createdAt),
+      clinician: displayName.value,
+      status: status.label,
+      tone: status.tone,
+      avatarTone: ["violet", "amber", "pink", "lime"][index % 4],
+    };
+  });
+});
+
+function openReport(row) {
+  router.push({ name: "clinician-transcription", query: { reportId: row.id } });
+}
 </script>
 
 <template>
-  <AppShell
-    title=""
-    subtitle=""
-    active-nav="Patient Library"
-  >
+  <AppShell title="" subtitle="" active-nav="Patient Library">
     <section class="library-heading">
       <h2>Patient Library</h2>
-      <p>Access, manage, and export your historical clinical documentation.</p>
+      <p>Your clinical cases and reports (from the reports table).</p>
     </section>
 
     <section class="library-toolbar">
       <div class="filter-pills">
-        <button v-for="filter in filters" :key="filter.key" class="filter-pill">
-          <span :class="['filter-icon', `icon-${filter.key}`]"></span>
+        <button
+          v-for="filter in filters"
+          :key="filter.key"
+          type="button"
+          class="filter-pill"
+          :class="{ active: activeFilter === filter.key }"
+          @click="activeFilter = filter.key"
+        >
+          <span :class="['filter-icon', filter.key === 'all' ? 'icon-general' : 'icon-radiology']"></span>
           {{ filter.label }}
         </button>
       </div>
-      <button class="export-btn">Export to CSV</button>
+      <button class="export-btn" type="button" disabled title="Coming soon">Export to CSV</button>
     </section>
 
-    <section class="table-wrap library-table">
+    <p v-if="isLoading" class="auth-form-message auth-form-message--info">Loading cases…</p>
+    <p v-else-if="isError" class="auth-form-message" role="alert">
+      {{ loadError?.message || "Could not load cases." }}
+    </p>
+
+    <section v-else class="table-wrap library-table">
       <table>
         <thead>
           <tr>
-            <th>Patient Name</th>
+            <th>Case</th>
             <th>Session Type</th>
-            <th>Last Visit</th>
-            <th>Primary Clinician</th>
+            <th>Last Updated</th>
+            <th>Clinician</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
+          <tr v-if="libraryRows.length === 0">
+            <td colspan="5">No cases found.</td>
+          </tr>
           <tr
-            v-for="patient in patients"
-            :key="`${patient.name}-${patient.session}-${patient.clinician}`"
+            v-for="row in libraryRows"
+            :key="row.id"
             class="clickable-row"
-            @click="$router.push('/patients/details')"
+            @click="openReport(row)"
           >
             <td>
               <div class="patient-name-cell">
-                <span :class="['avatar', patient.avatarTone]">{{ patient.initials }}</span>
-                <span>{{ patient.name }}</span>
+                <span :class="['avatar', row.avatarTone]">{{ row.initials }}</span>
+                <span>{{ row.name }}</span>
               </div>
             </td>
-            <td>{{ patient.session }}</td>
-            <td>{{ patient.date }}</td>
-            <td>{{ patient.clinician }}</td>
-            <td><span :class="['status-badge', patient.tone]">{{ patient.status }}</span></td>
+            <td>{{ row.session }}</td>
+            <td>{{ row.date }}</td>
+            <td>{{ row.clinician }}</td>
+            <td><span :class="['status-badge', row.tone]">{{ row.status }}</span></td>
           </tr>
         </tbody>
       </table>

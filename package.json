@@ -15,7 +15,9 @@
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
     "@fortawesome/vue-fontawesome": "^3.2.0",
     "@supabase/supabase-js": "^2.105.1",
+    "@tanstack/vue-query": "^5.100.10",
     "@vitejs/plugin-vue": "^5.2.4",
+    "pinia": "^3.0.4",
     "vite": "^5.4.21",
     "vue": "^3.5.31",
     "vue-router": "^4.6.4"

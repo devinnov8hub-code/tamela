@@ -1,7 +1,10 @@
 import { createApp } from "vue";
+import { createPinia } from "pinia";
+import { VueQueryPlugin } from "@tanstack/vue-query";
 import App from "./App.vue";
 import router from "./router";
-import { initSupabaseAuth } from "./session/authSession";
+import { queryClient } from "./plugins/queryClient.js";
+import { useAuthStore } from "./stores/auth.js";
 import "./style.css";
 import { library } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
@@ -57,7 +60,26 @@ library.add(
   faUserSlash
 );
 
-const app = createApp(App);
-app.component("font-awesome-icon", FontAwesomeIcon);
-initSupabaseAuth();
-app.use(router).mount("#app");
+async function startApp() {
+  const app = createApp(App);
+  const pinia = createPinia();
+
+  app.use(pinia);
+  app.use(VueQueryPlugin, { queryClient });
+  app.component("font-awesome-icon", FontAwesomeIcon);
+
+  const auth = useAuthStore(pinia);
+  auth.initAuthListener();
+
+  try {
+    await auth.ensureBootstrapped();
+  } catch (err) {
+    console.error("[app] auth bootstrap error", err);
+    auth.forceReady();
+  }
+
+  app.use(router);
+  app.mount("#app");
+}
+
+startApp();

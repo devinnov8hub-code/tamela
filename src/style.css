@@ -931,6 +931,45 @@ th {
   color: #6b7280;
 }
 
+.login-register-muted-only {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.login-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #c7d7f5;
+  background: #eef4ff;
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-form-header--register {
+  margin-bottom: 20px;
+}
+
+.login-form-header--register .login-logo-header {
+  margin-bottom: 14px;
+}
+
+.login-role-badge--static {
+  margin: 0 auto;
+  width: fit-content;
+}
+
+.login-form--register .register-name-row > div label {
+  margin-top: 0;
+}
+
+.login-form--register > label:first-of-type {
+  margin-top: 0;
+}
+
 .login-register-muted {
   margin-right: 6px;
 }
@@ -2793,6 +2832,15 @@ th {
   margin-top: 6px;
 }
 
+.admin-modal-password-wrap {
+  margin-top: 6px;
+}
+
+.admin-modal-password-wrap input {
+  margin-top: 0;
+  height: 54px;
+}
+
 .admin-modal-actions {
   margin-top: 18px;
   padding-top: 16px;
@@ -3046,6 +3094,184 @@ th {
   font-weight: 400;
 }
 
+.clinician-account-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.clinician-account-edit-btn {
+  border: 0;
+  background: #eff6ff;
+  color: #2563eb;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.clinician-account-edit-btn:hover {
+  background: #dbeafe;
+}
+
+.clinician-editable {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.clinician-editable:hover,
+.clinician-editable:focus-visible {
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+  outline: none;
+}
+
+.clinician-editable--inline {
+  display: inline-block;
+  padding: 2px 6px;
+}
+
+.clinician-readonly {
+  color: #6b7280 !important;
+  cursor: default;
+}
+
+.clinician-inline-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.clinician-inline-edit--name {
+  margin-bottom: 4px;
+}
+
+.clinician-inline-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  color: #111827;
+  background: #fff;
+  min-width: 120px;
+}
+
+.clinician-inline-input--title {
+  width: 72px;
+  min-width: 72px;
+}
+
+.clinician-inline-input--role {
+  font-size: 20px;
+  font-weight: 600;
+  min-width: 200px;
+}
+
+.clinician-inline-input--field {
+  width: 100%;
+  margin-top: 3px;
+  font-size: 22px;
+}
+
+.clinician-page-loading {
+  margin-top: 16px;
+}
+
+.clinician-loading-caption {
+  text-align: center;
+  margin-top: 12px;
+}
+
+.clinician-hero-card--loading .skeleton-line {
+  border-radius: 10px;
+}
+
+.clinician-hero-card--busy,
+.clinician-account-card--busy {
+  opacity: 0.72;
+  pointer-events: none;
+  position: relative;
+}
+
+.clinician-hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.clinician-cancel-btn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clinician-cancel-btn:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
+.clinician-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.clinician-saving-hint {
+  width: 100%;
+  margin: 0;
+  text-align: right;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.admin-add-user-btn.is-loading,
+.detail-danger-btn.is-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: clinician-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn-spinner--light {
+  border-color: rgba(185, 28, 28, 0.25);
+  border-top-color: #b91c1c;
+}
+
+.clinician-metric-loading,
+.clinician-table-loading {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.clinician-display-name {
+  margin: 0;
+  font-size: 44px;
+  color: #374151;
+}
+
+@keyframes clinician-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .detail-danger-btn {
   margin-top: 20px;
   border: 0;
@@ -3245,9 +3471,98 @@ th {
   gap: 14px;
 }
 
+.admin-settings-head--split {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.admin-settings-subtext {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.admin-department-add label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.admin-department-add-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.admin-department-add-row input {
+  flex: 1;
+  height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.admin-department-add-row .admin-settings-btn {
+  min-width: 150px;
+  height: 42px;
+}
+
+.admin-department-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-department-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  font-size: 14px;
+  font-weight: 500;
+  color: #111827;
+}
+
+.admin-settings-empty {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.admin-inline-settings-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2d5ec7;
+  text-decoration: none;
+}
+
+.admin-inline-settings-link:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 1024px) {
   .admin-settings-grid,
   .admin-identity-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-department-add-row {
+    flex-direction: column;
+  }
+
+  .admin-department-add-row .admin-settings-btn {
+    width: 100%;
   }
 }

@@ -67,7 +67,7 @@ async function loadTranscription() {
   } finally {
     isLoading.value = false;
     clearPendingAudioForTranscription();
-    router.replace({ path: "/recording/transcription" });
+    router.replace({ path: "/clinician/recording/transcription" });
   }
 }
 

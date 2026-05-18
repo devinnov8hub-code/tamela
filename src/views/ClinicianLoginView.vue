@@ -1,52 +1,75 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useAuth } from "../composables/useAuth.js";
 import { getAuthSiteRedirectUrl, isSupabaseConfigured, supabase } from "../services/supabase";
+import { UNAUTHORIZED_MESSAGE } from "../stores/auth.js";
+import { safePostAuthRedirect } from "../utils/safeRedirect.js";
 
 const router = useRouter();
 const route = useRoute();
-const signInRole = ref("clinician");
+const { signInWithPassword, authError, hydrateSession, isAuthenticated, role, consumeSessionExpiredMessage } =
+  useAuth();
+
 const passwordVisible = ref(false);
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
-const authError = ref("");
+const localError = ref("");
 
 const passwordInputType = computed(() => (passwordVisible.value ? "text" : "password"));
+const displayError = computed(() => localError.value || authError.value);
 
-function postAuthPath() {
-  return signInRole.value === "admin" ? "/admin/dashboard" : "/dashboard";
-}
+onMounted(async () => {
+  if (route.query.error === "unauthorized") {
+    localError.value = UNAUTHORIZED_MESSAGE;
+  } else if (route.query.reason === "session") {
+    const message = typeof route.query.message === "string" ? route.query.message : "";
+    localError.value = message || "Your session expired. Please sign in again.";
+  } else {
+    const stored = consumeSessionExpiredMessage();
+    if (stored) localError.value = stored;
+  }
+
+  await hydrateSession();
+
+  if (isAuthenticated.value && role.value) {
+    const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "";
+    await router.replace(safePostAuthRedirect(redirect, role.value));
+  }
+});
 
 async function handleSignIn() {
-  authError.value = "";
-  const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "";
+  localError.value = "";
 
   if (!isSupabaseConfigured || !supabase) {
-    router.push(redirect && redirect.startsWith("/") ? redirect : postAuthPath());
+    localError.value = "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.";
     return;
   }
 
   loading.value = true;
   try {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.value.trim(),
+    const result = await signInWithPassword({
+      email: email.value,
       password: password.value,
     });
-    if (error) {
-      authError.value = error.message;
+
+    if (!result.ok) {
+      localError.value = result.error || UNAUTHORIZED_MESSAGE;
       return;
     }
-    await router.replace(redirect && redirect.startsWith("/") ? redirect : postAuthPath());
+
+    const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "";
+    await router.replace(safePostAuthRedirect(redirect, role.value));
   } finally {
     loading.value = false;
   }
 }
 
 async function handleGoogleSignIn() {
-  authError.value = "";
+  localError.value = "";
   if (!isSupabaseConfigured || !supabase) {
-    authError.value = "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in app/.env.";
+    localError.value = "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.";
     return;
   }
   loading.value = true;
@@ -56,32 +79,30 @@ async function handleGoogleSignIn() {
       provider: "google",
       options: site ? { redirectTo: site } : {},
     });
-    if (error) authError.value = error.message;
+    if (error) localError.value = error.message;
   } finally {
     loading.value = false;
   }
 }
 
 async function handleForgotPassword() {
-  authError.value = "";
+  localError.value = "";
   if (!isSupabaseConfigured || !supabase) {
-    authError.value = "Supabase is not configured.";
+    localError.value = "Supabase is not configured.";
     return;
   }
   if (!email.value.trim()) {
-    authError.value = "Enter your email address above, then try again.";
+    localError.value = "Enter your email address above, then try again.";
     return;
   }
   loading.value = true;
   try {
     const site = getAuthSiteRedirectUrl();
     const { error } = await supabase.auth.resetPasswordForEmail(email.value.trim(), {
-      redirectTo: site ? `${site}/login` : undefined,
+      redirectTo: site ? `${site}/auth/login` : undefined,
     });
-    if (error) authError.value = error.message;
-    else authError.value = "";
-    // success feedback via alert to avoid new state for one line
-    if (!error) window.alert("If an account exists for that email, a reset link has been sent.");
+    if (error) localError.value = error.message;
+    else if (!error) window.alert("If an account exists for that email, a reset link has been sent.");
   } finally {
     loading.value = false;
   }
@@ -105,34 +126,16 @@ function togglePasswordVisible() {
           <img class="login-logo-header" src="/logo-with-text.png" alt="Tamela" />
           <p class="login-tagline">Ai Clinical Assistant</p>
           <p class="login-register-line">
-            <span class="login-register-muted">Don't have an account?</span>
-            <router-link class="login-register-cta" :to="{ name: 'register' }">Register Now &gt;</router-link>
+            <span class="login-register-muted">New hospital on Taymela?</span>
+            <router-link :to="{ name: 'auth-admin-register' }" class="login-register-cta">Register your hospital &gt;</router-link>
+          </p>
+          <p class="login-register-line login-register-muted-only">
+            Clinician accounts are created by your hospital administrator.
           </p>
         </header>
 
-        <div class="login-role-toggle" role="group" aria-label="Account type">
-          <button
-            type="button"
-            class="login-role-btn"
-            :class="{ 'is-selected': signInRole === 'clinician' }"
-            @click="signInRole = 'clinician'"
-          >
-            <font-awesome-icon :icon="['fas', 'user']" />
-            Clinician
-          </button>
-          <button
-            type="button"
-            class="login-role-btn"
-            :class="{ 'is-selected': signInRole === 'admin' }"
-            @click="signInRole = 'admin'"
-          >
-            <font-awesome-icon :icon="['fas', 'user-shield']" />
-            Admin
-          </button>
-        </div>
-
         <form class="login-form" @submit.prevent="handleSignIn">
-          <p v-if="authError" class="auth-form-message" role="alert">{{ authError }}</p>
+          <p v-if="displayError" class="auth-form-message" role="alert">{{ displayError }}</p>
 
           <label for="login-email">Email Address</label>
           <input

@@ -1,7 +1,7 @@
 <script setup>
 import { useRouter } from "vue-router";
 import { isSupabaseConfigured } from "../services/supabase";
-import { signOut } from "../session/authSession";
+import { useAuth } from "../composables/useAuth.js";
 
 defineProps({
   title: { type: String, default: "" },
@@ -12,6 +12,7 @@ defineProps({
 
 const emit = defineEmits(["update:searchValue"]);
 const router = useRouter();
+const { signOut, displayName, hospitalName } = useAuth();
 
 const navItems = [
   { label: "Dashboard", to: "/admin/dashboard", icon: "chart-line" },
@@ -27,7 +28,7 @@ function navigate(item) {
 
 async function handleLogout() {
   await signOut();
-  router.push({ name: "login" });
+  router.push({ name: "auth-login" });
 }
 </script>
 
@@ -55,8 +56,8 @@ async function handleLogout() {
       <footer class="admin-user-card">
         <span class="admin-user-avatar"><font-awesome-icon :icon="['fas', 'user-gear']" /></span>
         <div>
-          <p>Stella Ngozi George</p>
-          <small>System Administrator</small>
+          <p>{{ displayName }}</p>
+          <small>{{ hospitalName || "Hospital Administrator" }}</small>
           <button
             v-if="isSupabaseConfigured"
             type="button"

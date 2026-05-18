@@ -1,129 +1,68 @@
 <script setup>
 import { computed } from "vue";
+import { useQuery } from "@tanstack/vue-query";
 import AppShell from "../components/AppShell.vue";
-import { authUser } from "../session/authSession";
-import { adminClinicians } from "../data/adminClinicians";
+import { useAuth } from "../composables/useAuth.js";
+import { fetchReportsForClinician } from "../services/reportService.js";
+import { formatReportDate } from "../utils/formatDateTime.js";
 
-const stats = [
-  { label: "Total Reports", value: 125, color: "blue", icon: "file-lines" },
-  { label: "Processing", value: 7, color: "orange", icon: "clock" },
-  { label: "Completed Today", value: 16, color: "green", icon: "user-check" },
-];
+const { displayName, hospitalId, user } = useAuth();
 
-const rows = [
-  {
-    title: "Medication Titration",
-    sessionType: "General Consultation",
-    timestamp: "9.30 Am Feb 21, 2026",
-    status: "Processing",
-    tone: "blue",
+const {
+  data: reportsData,
+  isLoading,
+  isError,
+  error: loadError,
+} = useQuery({
+  queryKey: computed(() => ["clinician-dashboard-reports", hospitalId.value, user.value?.id]),
+  enabled: computed(() => Boolean(hospitalId.value && user.value?.id)),
+  queryFn: async () => {
+    const { reports, error } = await fetchReportsForClinician(hospitalId.value, user.value.id);
+    if (error) throw error;
+    return reports;
   },
-  {
-    title: "Acute Post-Operative Review",
-    sessionType: "Cardiology Follow-up",
-    timestamp: "1.30 Pm Feb 21, 2026",
-    status: "Processing",
-    tone: "blue",
-  },
-  {
-    title: "Urgent Respiratory Evaluation",
-    sessionType: "Neurology Intake",
-    timestamp: "2.45 Pm Feb 21, 2026",
-    status: "Completed",
-    tone: "green",
-  },
-  {
-    title: "Suspected Viral Infection",
-    sessionType: "Dermatology Screen",
-    timestamp: "3.15 Pm Feb 21, 2026",
-    status: "Completed",
-    tone: "green",
-  },
-  {
-    title: "Diabetes Mellitus Type 2",
-    sessionType: "Cardiology Consult",
-    timestamp: "11.30 Am Feb 21, 2026",
-    status: "Completed",
-    tone: "green",
-  },
-  {
-    title: "Telehealth",
-    sessionType: "Psychiatry Evaluation",
-    timestamp: "12.00 Pm Feb 21, 2026",
-    status: "Processing",
-    tone: "blue",
-  },
-  {
-    title: "Chronic Pain Consultation",
-    sessionType: "Endocrinology Follow-up",
-    timestamp: "4.00 Pm Feb 21, 2026",
-    status: "Processing",
-    tone: "blue",
-  },
-  {
-    title: "New Patient Physical",
-    sessionType: "Gastroenterology Review",
-    timestamp: "5.30 Pm Feb 21, 2026",
-    status: "Completed",
-    tone: "green",
-  },
-  {
-    title: "Annual Wellness Examination",
-    sessionType: "Orthopedic Assessment",
-    timestamp: "6.15 Pm Feb 21, 2026",
-    status: "Completed",
-    tone: "green",
-  },
-  {
-    title: "Prenatal Care: Second Trimester",
-    sessionType: "Pulmonary Function Test",
-    timestamp: "7.00 Pm Feb 21, 2026",
-    status: "Processing",
-    tone: "blue",
-  },
-];
-
-const signedInUserName = computed(() => {
-  const user = authUser.value;
-  if (!user) return "Clinician";
-
-  // Prefer our clinicians dataset (most reliable for this app) when emails match.
-  if (typeof user.email === "string" && user.email.includes("@")) {
-    const email = user.email.toLowerCase();
-    const clinician = adminClinicians.find((c) => (c.email ?? "").toLowerCase() === email);
-    if (clinician?.name) return clinician.name;
-  }
-
-  const metadata = user.user_metadata ?? {};
-
-  // Try common user_metadata keys across email/password and OAuth providers.
-  const candidates = [
-    metadata.full_name,
-    metadata.fullName,
-    metadata.display_name,
-    metadata.displayName,
-    metadata.name,
-    metadata.user_name,
-    metadata.username,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-  }
-
-  // Compose from first/last name if present.
-  const first = metadata.first_name ?? metadata.firstName ?? metadata.first;
-  const last = metadata.last_name ?? metadata.lastName ?? metadata.last;
-  if (typeof first === "string" && first.trim() && typeof last === "string" && last.trim()) {
-    return `${first.trim()} ${last.trim()}`;
-  }
-
-  if (typeof user.email === "string" && user.email.includes("@")) {
-    return user.email.split("@")[0];
-  }
-
-  return "Clinician";
 });
 
+const reports = computed(() => reportsData.value ?? []);
+
+const stats = computed(() => {
+  const list = reports.value;
+  const today = new Date();
+  const completedToday = list.filter((row) => {
+    if (row.rawStatus !== "COMPLETED" || !row.createdAt) return false;
+    const created = new Date(row.createdAt);
+    return (
+      created.getFullYear() === today.getFullYear() &&
+      created.getMonth() === today.getMonth() &&
+      created.getDate() === today.getDate()
+    );
+  }).length;
+
+  return [
+    { label: "Total Reports", value: list.length, color: "blue", icon: "file-lines" },
+    {
+      label: "Processing",
+      value: list.filter((row) => row.status === "processing").length,
+      color: "orange",
+      icon: "clock",
+    },
+    { label: "Completed Today", value: completedToday, color: "green", icon: "user-check" },
+  ];
+});
+
+const rows = computed(() =>
+  reports.value.map((row) => ({
+    id: row.id,
+    title: row.caseTitle,
+    sessionType: row.sessionType,
+    timestamp: formatReportDate(row.createdAt),
+    status:
+      row.status === "completed" ? "Completed" : row.status === "processing" ? "Processing" : "Draft",
+    tone: row.status === "completed" ? "green" : row.status === "processing" ? "blue" : "amber",
+  }))
+);
+
+const signedInUserName = computed(() => displayName.value);
 </script>
 
 <template>
@@ -132,52 +71,64 @@ const signedInUserName = computed(() => {
     subtitle="Real-time metrics and system health monitoring"
     active-nav="Dashboard"
   >
-      <section class="welcome-row">
+    <section class="welcome-row">
+      <div>
+        <h2>Welcome Back {{ signedInUserName }}.</h2>
+        <p>Review of latest activity and report status.</p>
+      </div>
+      <button class="export-btn" type="button" disabled title="Coming soon">Export to CSV</button>
+    </section>
+
+    <section class="stats-grid">
+      <article v-for="stat in stats" :key="stat.label" class="stat-card">
+        <span :class="['stat-icon', stat.color]">
+          <font-awesome-icon :icon="['fas', stat.icon]" />
+        </span>
         <div>
-          <h2>Welcome Back {{ signedInUserName }}.</h2>
-          <p>Review of latest activity and report status.</p>
+          <p>{{ stat.label }}</p>
+          <h3>{{ isLoading ? "…" : stat.value }}</h3>
         </div>
-        <button class="export-btn">Export to CSV</button>
-      </section>
+      </article>
+    </section>
 
-      <section class="stats-grid">
-        <article v-for="stat in stats" :key="stat.label" class="stat-card">
-          <span :class="['stat-icon', stat.color]">
-            <font-awesome-icon :icon="['fas', stat.icon]" />
-          </span>
-          <div>
-            <p>{{ stat.label }}</p>
-            <h3>{{ stat.value }}</h3>
-          </div>
-        </article>
-      </section>
+    <p v-if="isLoading" class="auth-form-message auth-form-message--info">Loading your reports…</p>
+    <p v-else-if="isError" class="auth-form-message" role="alert">
+      {{ loadError?.message || "Could not load reports." }}
+    </p>
 
-      <section class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Case Title</th>
-              <th>Session Type</th>
-              <th>Timestamp</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="`${row.title}-${row.timestamp}`">
-              <td>{{ row.title }}</td>
-              <td>{{ row.sessionType }}</td>
-              <td>{{ row.timestamp }}</td>
-              <td>
-                <span :class="['status-badge', row.tone]">{{ row.status }}</span>
-              </td>
-              <td class="actions-cell">
-                <button class="ghost-btn" title="Edit"><font-awesome-icon :icon="['fas', 'pen-to-square']" /></button>
-                <button class="ghost-btn" title="Delete"><font-awesome-icon :icon="['fas', 'trash-can']" /></button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+    <section v-else class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Case Title</th>
+            <th>Session Type</th>
+            <th>Timestamp</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="rows.length === 0">
+            <td colspan="5">No reports yet.</td>
+          </tr>
+          <tr v-for="row in rows" :key="row.id">
+            <td>{{ row.title }}</td>
+            <td>{{ row.sessionType }}</td>
+            <td>{{ row.timestamp }}</td>
+            <td>
+              <span :class="['status-badge', row.tone]">{{ row.status }}</span>
+            </td>
+            <td class="actions-cell">
+              <button class="ghost-btn" type="button" title="Edit" disabled>
+                <font-awesome-icon :icon="['fas', 'pen-to-square']" />
+              </button>
+              <button class="ghost-btn" type="button" title="Delete" disabled>
+                <font-awesome-icon :icon="['fas', 'trash-can']" />
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </AppShell>
 </template>

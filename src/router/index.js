@@ -1,111 +1,151 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { isSupabaseConfigured, supabase } from "../services/supabase";
-import ClinicianLoginView from "../views/ClinicianLoginView.vue";
-import RegisterView from "../views/RegisterView.vue";
-import DashboardView from "../views/DashboardView.vue";
-import FreshRecordingView from "../views/FreshRecordingView.vue";
-import ActiveRecordingView from "../views/ActiveRecordingView.vue";
-import TranscriptionView from "../views/TranscriptionView.vue";
-import PatientLibraryView from "../views/PatientLibraryView.vue";
-import PatientDetailView from "../views/PatientDetailView.vue";
-import AdminDashboardView from "../views/AdminDashboardView.vue";
-import AdminUserManagementView from "../views/AdminUserManagementView.vue";
-import AdminClinicianDetailView from "../views/AdminClinicianDetailView.vue";
-import AdminReportsView from "../views/AdminReportsView.vue";
-import AdminReportTranscriptionView from "../views/AdminReportTranscriptionView.vue";
-import AdminSettingsView from "../views/AdminSettingsView.vue";
+import { runNavigationGuards } from "./guards.js";
+
+const ClinicianLoginView = () => import("../views/ClinicianLoginView.vue");
+const AdminRegisterView = () => import("../views/AdminRegisterView.vue");
+const DashboardView = () => import("../views/DashboardView.vue");
+const FreshRecordingView = () => import("../views/FreshRecordingView.vue");
+const ActiveRecordingView = () => import("../views/ActiveRecordingView.vue");
+const TranscriptionView = () => import("../views/TranscriptionView.vue");
+const PatientLibraryView = () => import("../views/PatientLibraryView.vue");
+const PatientDetailView = () => import("../views/PatientDetailView.vue");
+const AdminDashboardView = () => import("../views/AdminDashboardView.vue");
+const AdminUserManagementView = () => import("../views/AdminUserManagementView.vue");
+const AdminClinicianDetailView = () => import("../views/AdminClinicianDetailView.vue");
+const AdminReportsView = () => import("../views/AdminReportsView.vue");
+const AdminReportTranscriptionView = () => import("../views/AdminReportTranscriptionView.vue");
+const AdminSettingsView = () => import("../views/AdminSettingsView.vue");
 
 const routes = [
+  { path: "/", redirect: "/auth/login" },
+
   {
-    path: "/login",
-    name: "login",
-    component: ClinicianLoginView,
+    path: "/auth",
+    children: [
+      { path: "", redirect: { name: "auth-login" } },
+      {
+        path: "login",
+        name: "auth-login",
+        component: ClinicianLoginView,
+        meta: { public: true },
+      },
+      {
+        path: "admin/register",
+        name: "auth-admin-register",
+        component: AdminRegisterView,
+        meta: { public: true },
+      },
+    ],
   },
+
+  { path: "/login", redirect: { name: "auth-login" } },
+  { path: "/register", redirect: { name: "auth-admin-register" } },
+
   {
-    path: "/register",
-    name: "register",
-    component: RegisterView,
+    path: "/clinician",
+    children: [
+      { path: "", redirect: { name: "clinician-dashboard" } },
+      {
+        path: "dashboard",
+        name: "clinician-dashboard",
+        component: DashboardView,
+        meta: { role: "clinician" },
+      },
+      {
+        path: "recording",
+        redirect: { name: "clinician-recording-fresh" },
+      },
+      {
+        path: "recording/fresh",
+        name: "clinician-recording-fresh",
+        component: FreshRecordingView,
+        meta: { role: "clinician" },
+      },
+      {
+        path: "recording/active",
+        name: "clinician-recording-active",
+        component: ActiveRecordingView,
+        meta: { role: "clinician" },
+      },
+      {
+        path: "recording/transcription",
+        name: "clinician-transcription",
+        component: TranscriptionView,
+        meta: { role: "clinician" },
+      },
+      {
+        path: "patients",
+        redirect: { name: "clinician-patient-library" },
+      },
+      {
+        path: "patients/library",
+        name: "clinician-patient-library",
+        component: PatientLibraryView,
+        meta: { role: "clinician" },
+      },
+      {
+        path: "patients/details",
+        name: "clinician-patient-details",
+        component: PatientDetailView,
+        meta: { role: "clinician" },
+      },
+    ],
   },
-  {
-    path: "/",
-    redirect: "/dashboard",
-  },
-  {
-    path: "/dashboard",
-    name: "dashboard",
-    component: DashboardView,
-  },
-  {
-    path: "/recording/fresh",
-    name: "fresh-recording",
-    component: FreshRecordingView,
-  },
-  {
-    path: "/recording",
-    redirect: "/recording/fresh",
-  },
-  {
-    path: "/recording/active",
-    name: "active-recording",
-    component: ActiveRecordingView,
-  },
-  {
-    path: "/recording/transcription",
-    name: "transcription",
-    component: TranscriptionView,
-  },
-  {
-    path: "/patients/library",
-    name: "patient-library",
-    component: PatientLibraryView,
-  },
-  {
-    path: "/patients",
-    redirect: "/patients/library",
-  },
-  {
-    path: "/patients/details",
-    name: "patient-details",
-    component: PatientDetailView,
-  },
+
   {
     path: "/admin",
-    redirect: "/admin/dashboard",
+    children: [
+      { path: "", redirect: { name: "admin-dashboard" } },
+      {
+        path: "dashboard",
+        name: "admin-dashboard",
+        component: AdminDashboardView,
+        meta: { role: "admin" },
+      },
+      {
+        path: "users",
+        name: "admin-users",
+        component: AdminUserManagementView,
+        meta: { role: "admin" },
+      },
+      {
+        path: "users/:clinicianId",
+        name: "admin-clinician-detail",
+        component: AdminClinicianDetailView,
+        meta: { role: "admin" },
+      },
+      {
+        path: "reports",
+        name: "admin-reports",
+        component: AdminReportsView,
+        meta: { role: "admin" },
+      },
+      {
+        path: "reports/:reportId/transcription",
+        name: "admin-report-transcription",
+        component: AdminReportTranscriptionView,
+        meta: { role: "admin" },
+      },
+      {
+        path: "settings",
+        name: "admin-settings",
+        component: AdminSettingsView,
+        meta: { role: "admin" },
+      },
+    ],
   },
-  {
-    path: "/admin/dashboard",
-    name: "admin-dashboard",
-    component: AdminDashboardView,
-  },
-  {
-    path: "/admin/users",
-    name: "admin-users",
-    component: AdminUserManagementView,
-  },
-  {
-    path: "/admin/users/:clinicianId",
-    name: "admin-clinician-detail",
-    component: AdminClinicianDetailView,
-  },
-  {
-    path: "/admin/reports",
-    name: "admin-reports",
-    component: AdminReportsView,
-  },
-  {
-    path: "/admin/reports/:reportId/transcription",
-    name: "admin-report-transcription",
-    component: AdminReportTranscriptionView,
-  },
-  {
-    path: "/admin/settings",
-    name: "admin-settings",
-    component: AdminSettingsView,
-  },
-  {
-    path: "/:pathMatch(.*)*",
-    redirect: "/",
-  },
+
+  // Legacy clinician paths → new structure
+  { path: "/dashboard", redirect: "/clinician/dashboard" },
+  { path: "/recording/fresh", redirect: "/clinician/recording/fresh" },
+  { path: "/recording/active", redirect: "/clinician/recording/active" },
+  { path: "/recording/transcription", redirect: "/clinician/recording/transcription" },
+  { path: "/recording", redirect: "/clinician/recording/fresh" },
+  { path: "/patients/library", redirect: "/clinician/patients/library" },
+  { path: "/patients/details", redirect: "/clinician/patients/details" },
+  { path: "/patients", redirect: "/clinician/patients/library" },
+
+  { path: "/:pathMatch(.*)*", redirect: "/auth/login" },
 ];
 
 const router = createRouter({
@@ -113,22 +153,6 @@ const router = createRouter({
   routes,
 });
 
-const PUBLIC_ROUTE_NAMES = new Set(["login", "register"]);
-
-router.beforeEach(async (to) => {
-  if (!isSupabaseConfigured || !supabase) return true;
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (PUBLIC_ROUTE_NAMES.has(to.name)) {
-    if (session) return { path: "/dashboard" };
-    return true;
-  }
-
-  if (session) return true;
-  return { name: "login", query: { redirect: to.fullPath } };
-});
+router.beforeEach(async (to, from) => runNavigationGuards(to, from));
 
 export default router;

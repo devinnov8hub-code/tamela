@@ -5,7 +5,7 @@ import { useRouter } from "vue-router";
 const router = useRouter();
 
 function startRecording() {
-  router.push("/recording/active");
+  router.push("/clinician/recording/active");
 }
 </script>
 

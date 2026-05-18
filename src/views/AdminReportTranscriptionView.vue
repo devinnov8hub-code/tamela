@@ -1,33 +1,72 @@
 <script setup>
 import { computed } from "vue";
 import { useRoute } from "vue-router";
+import { useQuery } from "@tanstack/vue-query";
 import AdminShell from "../components/AdminShell.vue";
-import { adminReports } from "../data/adminClinicians";
+import { useAuth } from "../composables/useAuth.js";
+import { fetchReportById, fetchReportTranscription } from "../services/reportService.js";
+import { formatReportDate } from "../utils/formatDateTime.js";
 
 const route = useRoute();
+const { hospitalId } = useAuth();
 
-const report = computed(() => {
-  const id = Number(route.params.reportId);
-  return adminReports.find((item) => item.id === id) || adminReports[0];
+const reportId = computed(() => String(route.params.reportId ?? ""));
+
+const {
+  data: report,
+  isLoading: reportLoading,
+  isError: reportError,
+  error: reportLoadError,
+} = useQuery({
+  queryKey: computed(() => ["admin-report", hospitalId.value, reportId.value]),
+  enabled: computed(() => Boolean(hospitalId.value && reportId.value)),
+  queryFn: async () => {
+    const { report: row, error } = await fetchReportById(hospitalId.value, reportId.value);
+    if (error) throw error;
+    if (!row) throw new Error("Report not found.");
+    return row;
+  },
 });
 
-const sections = [
-  {
-    title: "Clinical Impression",
-    items: [
-      "Condition: Acute Cholecystitis (K81.0)",
-      "Certainty: High (Based on Murphy's Sign)",
-    ],
+const {
+  data: transcriptionRow,
+  isLoading: transcriptionLoading,
+} = useQuery({
+  queryKey: computed(() => ["admin-report-transcription", reportId.value]),
+  enabled: computed(() => Boolean(reportId.value)),
+  queryFn: async () => {
+    const { transcription, error } = await fetchReportTranscription(reportId.value);
+    if (error) throw error;
+    return transcription;
   },
-  {
-    title: "Differential Diagnosis",
-    items: ["Conditions: Biliary Colic, Pancreatitis, PUD", "Risk Level: Moderate"],
-  },
-  {
-    title: "Diagnostic Plan",
-    items: ["Orders: Abdominal Ultrasound, CBC", "Status: Pending / Urgent"],
-  },
-];
+});
+
+const transcriptionText = computed(() => {
+  const row = transcriptionRow.value;
+  if (!row?.transcription) return "";
+  return String(row.transcription).trim();
+});
+
+const formattedSections = computed(() => {
+  const raw = transcriptionRow.value?.formatted_transcription;
+  if (!raw || typeof raw !== "object") return [];
+
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((item) => item && typeof item === "object")
+      .map((item) => ({
+        title: String(item.title ?? "Section"),
+        items: Array.isArray(item.items) ? item.items.map(String) : [String(item.text ?? "")],
+      }));
+  }
+
+  return Object.entries(raw).map(([title, value]) => ({
+    title,
+    items: Array.isArray(value) ? value.map(String) : [String(value)],
+  }));
+});
+
+const isLoading = computed(() => reportLoading.value || transcriptionLoading.value);
 </script>
 
 <template>
@@ -37,60 +76,62 @@ const sections = [
     active-nav="Reports"
     search-value=""
   >
-    <section class="editor-toolbar">
-      <div class="toolbar-left">
-        <button type="button" class="toolbar-btn">↶</button>
-        <button type="button" class="toolbar-btn">↷</button>
-        <span class="divider"></span>
-        <span class="toolbar-label">Normal Text</span>
-        <button type="button" class="toolbar-btn">B</button>
-        <button type="button" class="toolbar-btn">I</button>
-        <button type="button" class="toolbar-btn">U</button>
-      </div>
-      <div class="toolbar-actions">
-        <button type="button" class="secondary-btn small">Smart Copy</button>
-        <button type="button" class="export-btn small">Export ToPDF</button>
-      </div>
-    </section>
+    <p v-if="!hospitalId" class="auth-form-message" role="alert">Hospital context is missing.</p>
 
-    <section class="transcription-layout">
-      <article class="note-card">
-        <h2>Clinical Consultation Note</h2>
-        <p class="case-ref">Case Ref: {{ report.reportId }}-JHK-2023</p>
+    <p v-else-if="isLoading" class="auth-form-message auth-form-message--info">Loading transcription…</p>
 
-        <h4>Chief Complaint</h4>
-        <p>
-          Patient presents with recurring abdominal pain localized in the right upper quadrant,
-          persisting for 3 days. Patient describes it as "sharp and intermittent."
-        </p>
+    <p v-else-if="reportError" class="auth-form-message" role="alert">
+      {{ reportLoadError?.message || "Could not load report." }}
+    </p>
 
-        <h4>History of Present Illness</h4>
-        <p>
-          45-year-old male with a history of mild hypertension. Reports that the current episode
-          began after a heavy dinner on Tuesday. Pain radiates to the right scapula. Associated
-          symptoms include mild nausea but no vomiting.
-        </p>
+    <template v-else-if="report">
+      <section class="editor-toolbar">
+        <div class="toolbar-left">
+          <button type="button" class="toolbar-btn">↶</button>
+          <button type="button" class="toolbar-btn">↷</button>
+          <span class="divider"></span>
+          <span class="toolbar-label">Normal Text</span>
+          <button type="button" class="toolbar-btn">B</button>
+          <button type="button" class="toolbar-btn">I</button>
+          <button type="button" class="toolbar-btn">U</button>
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" class="secondary-btn small">Smart Copy</button>
+          <button type="button" class="export-btn small">Export ToPDF</button>
+        </div>
+      </section>
 
-        <h4>Physical Examination</h4>
-        <ul>
-          <li><strong>General:</strong> Alert and oriented x3, in moderate distress due to pain.</li>
-          <li><strong>Vitals:</strong> BP 142/88, HR 92 bpm, Temp 98.6F, SpO2 99% on RA.</li>
-          <li><strong>Abdomen:</strong> Positive Murphy's sign. Soft, but tender RUQ on deep palpation.</li>
-        </ul>
+      <section class="transcription-layout">
+        <article class="note-card">
+          <h2>{{ report.caseTitle }}</h2>
+          <p class="case-ref">
+            Report ID: {{ report.reportId }} · {{ report.clinicianName }} · {{ report.department }}
+          </p>
+          <p v-if="report.createdAt" class="case-ref">Created {{ formatReportDate(report.createdAt) }}</p>
 
-        <h4>Impressions &amp; Recommendations</h4>
-        <p>
-          Primary suspicion is acute cholecystitis. Differential diagnosis includes biliary colic,
-          peptic ulcer disease, and pancreatitis. Plan: Ordered abdominal ultrasound and CBC/LFTs.
-        </p>
-      </article>
-
-      <aside class="insight-stack">
-        <article v-for="section in sections" :key="section.title" class="insight-card">
-          <h4>{{ section.title.toUpperCase() }}</h4>
-          <p v-for="item in section.items" :key="item">{{ item }}</p>
+          <template v-if="transcriptionText">
+            <h4>Transcription</h4>
+            <p class="transcription-body">{{ transcriptionText }}</p>
+          </template>
+          <p v-else class="auth-form-message auth-form-message--info">
+            No transcription has been saved for this report yet.
+          </p>
         </article>
-      </aside>
-    </section>
+
+        <aside v-if="formattedSections.length" class="insight-stack">
+          <article v-for="section in formattedSections" :key="section.title" class="insight-card">
+            <h4>{{ section.title.toUpperCase() }}</h4>
+            <p v-for="item in section.items" :key="item">{{ item }}</p>
+          </article>
+        </aside>
+      </section>
+    </template>
   </AdminShell>
 </template>
+
+<style scoped>
+.transcription-body {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+</style>

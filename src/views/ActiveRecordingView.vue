@@ -160,7 +160,7 @@ function finalizeBlobAndNavigate() {
   setPendingAudioForTranscription(blob);
   isFinishing.value = false;
   isRecording.value = false;
-  router.push({ path: "/recording/transcription", query: { loading: "1" } });
+  router.push({ path: "/clinician/recording/transcription", query: { loading: "1" } });
 }
 
 function stopRecording() {
@@ -192,7 +192,7 @@ function onFileSelected(ev) {
   ev.target.value = "";
   if (!file) return;
   setPendingAudioForTranscription(file);
-  router.push({ path: "/recording/transcription", query: { loading: "1" } });
+  router.push({ path: "/clinician/recording/transcription", query: { loading: "1" } });
 }
 
 const timeParts = computed(() => {
