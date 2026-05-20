@@ -11,6 +11,8 @@ const route = useRoute();
 const { signInWithPassword, authError, hydrateSession, isAuthenticated, role, consumeSessionExpiredMessage } =
   useAuth();
 
+/** Visual only — sign-in is universal; routing follows the user’s role after auth. */
+const signInRole = ref("clinician");
 const passwordVisible = ref(false);
 const email = ref("");
 const password = ref("");
@@ -126,13 +128,31 @@ function togglePasswordVisible() {
           <img class="login-logo-header" src="/logo-with-text.png" alt="Tamela" />
           <p class="login-tagline">Ai Clinical Assistant</p>
           <p class="login-register-line">
-            <span class="login-register-muted">New hospital on Tamela?</span>
-            <router-link :to="{ name: 'auth-admin-register' }" class="login-register-cta">Register your hospital &gt;</router-link>
-          </p>
-          <p class="login-register-line login-register-muted-only">
-            Clinician accounts are created by your hospital administrator.
+            <span class="login-register-muted">Don't have an account?</span>
+            <router-link :to="{ name: 'auth-admin-register' }" class="login-register-cta">Register Now &gt;</router-link>
           </p>
         </header>
+
+        <div class="login-role-toggle" role="group" aria-label="Account type (display only)">
+          <button
+            type="button"
+            class="login-role-btn"
+            :class="{ 'is-selected': signInRole === 'clinician' }"
+            @click="signInRole = 'clinician'"
+          >
+            <font-awesome-icon :icon="['fas', 'user']" />
+            Clinician
+          </button>
+          <button
+            type="button"
+            class="login-role-btn"
+            :class="{ 'is-selected': signInRole === 'admin' }"
+            @click="signInRole = 'admin'"
+          >
+            <font-awesome-icon :icon="['fas', 'user-shield']" />
+            Admin
+          </button>
+        </div>
 
         <form class="login-form" @submit.prevent="handleSignIn">
           <p v-if="displayError" class="auth-form-message" role="alert">{{ displayError }}</p>

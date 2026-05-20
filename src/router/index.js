@@ -15,6 +15,7 @@ const AdminClinicianDetailView = () => import("../views/AdminClinicianDetailView
 const AdminReportsView = () => import("../views/AdminReportsView.vue");
 const AdminReportTranscriptionView = () => import("../views/AdminReportTranscriptionView.vue");
 const AdminSettingsView = () => import("../views/AdminSettingsView.vue");
+const AdminProfileView = () => import("../views/AdminProfileView.vue");
 
 const routes = [
   { path: "/", redirect: "/auth/login" },
@@ -124,6 +125,12 @@ const routes = [
         path: "reports/:reportId/transcription",
         name: "admin-report-transcription",
         component: AdminReportTranscriptionView,
+        meta: { role: "admin" },
+      },
+      {
+        path: "profile",
+        name: "admin-profile",
+        component: AdminProfileView,
         meta: { role: "admin" },
       },
       {

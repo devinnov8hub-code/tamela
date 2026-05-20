@@ -850,10 +850,10 @@ th {
 .auth-page.universal-login {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 480px);
+  grid-template-columns: 1fr 1fr;
   padding: 0;
   margin: 0;
-  background: #0a1628;
+  background: #ffffff;
 }
 
 .login-brand-panel {
@@ -862,42 +862,41 @@ th {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: linear-gradient(145deg, #123366 0%, #1d4d8f 45%, #12386d 100%);
+  background: linear-gradient(180deg, #c5d4f5 0%, #e8e0d4 52%, #dcc9b5 100%);
 }
 
 .login-brand-glow {
   position: absolute;
-  width: min(90%, 520px);
-  height: min(90%, 520px);
-  right: -8%;
-  top: 50%;
-  transform: translateY(-50%);
+  width: min(85%, 480px);
+  height: min(70%, 420px);
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
   background: radial-gradient(
     circle,
-    rgba(251, 146, 60, 0.32) 0%,
-    rgba(147, 197, 253, 0.2) 42%,
-    transparent 70%
+    rgba(251, 146, 60, 0.22) 0%,
+    rgba(255, 255, 255, 0.35) 45%,
+    transparent 72%
   );
   pointer-events: none;
 }
 
 .login-brand-mark {
   position: relative;
-  width: min(78%, 380px);
-  max-width: 380px;
+  width: min(72%, 360px);
+  max-width: 360px;
   height: auto;
   opacity: 1;
-  filter: grayscale(0.2);
 }
 
 .login-form-panel {
   background: #ffffff;
-  border-radius: 28px 0 0 28px;
-  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.12);
+  border-radius: 0;
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 36px 48px;
+  padding: 48px 56px;
 }
 
 .login-form-panel-inner {
@@ -988,7 +987,7 @@ th {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-bottom: 6px;
+  margin: 0 0 18px;
 }
 
 .login-role-btn {
@@ -1011,9 +1010,10 @@ th {
 }
 
 .login-role-btn.is-selected {
-  border-color: #9ebaf0;
+  border-color: #4d81e0;
   background: #edf3ff;
   color: #2d5ec7;
+  box-shadow: 0 0 0 1px rgba(77, 129, 224, 0.15);
 }
 
 .login-form label {
@@ -1225,18 +1225,18 @@ th {
   }
 
   .login-brand-panel {
-    min-height: 120px;
-    padding: 20px;
+    min-height: 140px;
+    padding: 24px 20px;
   }
 
   .login-brand-mark {
-    width: min(200px, 55%);
+    width: min(220px, 60%);
     opacity: 1;
   }
 
   .login-form-panel {
-    border-radius: 24px 24px 0 0;
-    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.08);
+    border-radius: 0;
+    box-shadow: none;
     padding: 28px 20px 36px;
   }
 }
@@ -1367,23 +1367,200 @@ th {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: background 0.15s ease;
+}
+
+.admin-user-card:hover,
+.admin-user-card.active {
+  background: #f3f4f6;
+}
+
+.admin-user-card-text {
+  min-width: 0;
 }
 
 .admin-user-avatar {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
-  background: #d9f99d;
-  border: 1px solid #bef264;
+  background: #fce7d6;
+  border: 1px solid #fdba74;
+  color: #c2410c;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
 }
 
 .admin-user-card p {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.3;
 }
 
 .admin-user-card small {
-  color: #6b7280;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.admin-profile-hero-card {
+  margin-top: 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.admin-profile-hero-avatar {
+  width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #fce7d6 0%, #ffedd5 100%);
+  border: 2px solid #fdba74;
+  color: #9a3412;
+  display: grid;
+  place-items: center;
+  font-size: 42px;
+  flex-shrink: 0;
+}
+
+.admin-profile-display-name {
+  margin: 0;
+  font-size: 36px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.15;
+}
+
+.admin-profile-role-line {
+  margin: 8px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.admin-profile-member-since {
+  margin: 8px 0 0;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.admin-profile-info-card {
+  margin-top: 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  padding: 20px 24px 24px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.admin-profile-info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-profile-info-head h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.admin-profile-edit-btn {
+  border: 0;
+  background: #eff6ff;
+  color: #2563eb;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  cursor: not-allowed;
+  font-size: 17px;
+  opacity: 0.7;
+}
+
+.admin-profile-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px 20px;
+}
+
+.admin-profile-field span {
+  display: block;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.admin-profile-field strong {
+  display: block;
+  margin-top: 4px;
+  color: #1e293b;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.admin-profile-logout-row {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.admin-profile-logout-btn {
+  border: 1px solid #fdba74;
+  background: #ffedd5;
+  color: #c2410c;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.admin-profile-logout-btn:hover {
+  background: #fed7aa;
+}
+
+@media (max-width: 900px) {
+  .admin-profile-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-profile-hero-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .admin-profile-info-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .admin-content-area {

@@ -1,6 +1,5 @@
 <script setup>
 import { useRouter } from "vue-router";
-import { isSupabaseConfigured } from "../services/supabase";
 import { useAuth } from "../composables/useAuth.js";
 
 defineProps({
@@ -8,11 +7,15 @@ defineProps({
   subtitle: { type: String, default: "" },
   activeNav: { type: String, default: "Dashboard" },
   searchValue: { type: String, default: "" },
+  searchPlaceholder: {
+    type: String,
+    default: "Search by name, clinician ID, or status",
+  },
 });
 
 const emit = defineEmits(["update:searchValue"]);
 const router = useRouter();
-const { signOut, displayName, hospitalName } = useAuth();
+const { displayName } = useAuth();
 
 const navItems = [
   { label: "Dashboard", to: "/admin/dashboard", icon: "chart-line" },
@@ -26,10 +29,6 @@ function navigate(item) {
   router.push(item.to);
 }
 
-async function handleLogout() {
-  await signOut();
-  router.push({ name: "auth-login" });
-}
 </script>
 
 <template>
@@ -53,22 +52,18 @@ async function handleLogout() {
         </button>
       </nav>
 
-      <footer class="admin-user-card">
-        <span class="admin-user-avatar"><font-awesome-icon :icon="['fas', 'user-gear']" /></span>
-        <div>
+      <button
+        type="button"
+        class="admin-user-card"
+        :class="{ active: activeNav === 'Profile' }"
+        @click="router.push({ name: 'admin-profile' })"
+      >
+        <span class="admin-user-avatar"><font-awesome-icon :icon="['fas', 'user']" /></span>
+        <div class="admin-user-card-text">
           <p>{{ displayName }}</p>
-          <small>{{ hospitalName || "Hospital Administrator" }}</small>
-          <button
-            v-if="isSupabaseConfigured"
-            type="button"
-            class="link-btn"
-            style="display: block; margin-top: 8px; padding: 0"
-            @click="handleLogout"
-          >
-            Sign out
-          </button>
+          <small>System Administrator</small>
         </div>
-      </footer>
+      </button>
     </aside>
 
     <main class="admin-content-area">
@@ -83,7 +78,7 @@ async function handleLogout() {
             <input
               type="text"
               :value="searchValue"
-              placeholder="Search by name, clinician ID, or status"
+              :placeholder="searchPlaceholder"
               @input="emit('update:searchValue', $event.target.value)"
             />
           </div>
