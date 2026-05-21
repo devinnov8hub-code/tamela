@@ -189,7 +189,9 @@ export async function fetchReportTranscription(reportId) {
   const client = requireSupabase();
   const { data, error } = await client
     .from("report_transcriptions")
-    .select("id, report_id, transcription, formatted_transcription, created_at, updated_at")
+    .select(
+      "id, report_id, transcription, critical_fields, formatted_transcription, created_at, updated_at"
+    )
     .eq("report_id", reportId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -233,6 +235,7 @@ export function generateReportId() {
  *   clinicianId: string,
  *   departmentId?: string | null,
  *   transcription: string,
+ *   criticalFields?: unknown,
  *   formattedTranscription?: unknown,
  *   sessionType?: string,
  *   caseTitle?: string,
@@ -245,6 +248,7 @@ export async function saveReportWithTranscription(payload) {
     clinicianId,
     departmentId = null,
     transcription,
+    criticalFields = null,
     formattedTranscription = null,
     sessionType = "Live Recording",
     caseTitle,
@@ -273,13 +277,34 @@ export async function saveReportWithTranscription(payload) {
     return { report: null, error: reportError };
   }
 
-  const { error: transcriptionError } = await client.from("report_transcriptions").insert({
+  const transcriptionRow = {
     report_id: report.id,
     transcription,
+    critical_fields: criticalFields,
     formatted_transcription: formattedTranscription,
     created_by: clinicianId,
     updated_by: clinicianId,
-  });
+  };
+
+  let { error: transcriptionError } = await client.from("report_transcriptions").insert(transcriptionRow);
+
+  // Fallback if migration not applied yet (no critical_fields column).
+  if (
+    transcriptionError &&
+    typeof transcriptionError.message === "string" &&
+    /critical_fields/i.test(transcriptionError.message)
+  ) {
+    const legacyRow = {
+      report_id: report.id,
+      transcription,
+      formatted_transcription: criticalFields
+        ? { critical_fields: criticalFields }
+        : formattedTranscription,
+      created_by: clinicianId,
+      updated_by: clinicianId,
+    };
+    ({ error: transcriptionError } = await client.from("report_transcriptions").insert(legacyRow));
+  }
 
   if (transcriptionError) {
     await client.from("reports").delete().eq("id", report.id);

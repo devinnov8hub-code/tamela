@@ -3,13 +3,20 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQueryClient } from "@tanstack/vue-query";
 import AppShell from "../components/AppShell.vue";
+import ClinicalMarkdown from "../components/ClinicalMarkdown.vue";
 import { useAuth } from "../composables/useAuth.js";
-import { extractTranscriptionText, transcribeAudio } from "../services/scribeApi.js";
+import { transcribeAudioAndGenerateReport } from "../services/scribeApi.js";
+import { fetchSpecialtiesByHospital } from "../services/specialtyService.js";
 import {
   fetchReportById,
   fetchReportTranscription,
   saveReportWithTranscription,
 } from "../services/reportService.js";
+import {
+  groupCriticalFieldsForDisplay,
+  insightSectionsFromTranscriptionRow,
+  normalizeCriticalFields,
+} from "../utils/criticalFields.js";
 import {
   buildClinicalNotePlainText,
   copyTextToClipboard,
@@ -34,53 +41,22 @@ const { hospitalId, user, profile } = useAuth();
 const loadingFromQuery = computed(() => route.query.loading === "1");
 const reportIdFromRoute = computed(() => String(route.query.reportId ?? "").trim());
 const isLoading = ref(loadingFromQuery.value);
-const transcriptText = ref("");
+const transcriptMarkdown = ref("");
+const criticalFields = ref([]);
 const errorText = ref("");
 const saveErrorText = ref("");
 const actionMessage = ref("");
 const copyInProgress = ref(false);
 const exportInProgress = ref(false);
 const savedReport = ref(null);
+const loadingStage = ref("");
 
 const last = getLastTranscription();
-if (last?.text) transcriptText.value = last.text;
+if (last?.text) transcriptMarkdown.value = last.text;
 if (last?.error) errorText.value = last.error;
+if (last?.criticalFields?.length) criticalFields.value = last.criticalFields;
 
-const insightSections = [
-  {
-    title: "Clinical Impression",
-    items: [
-      "Condition: Acute Cholecystitis (K81.0)",
-      "Certainty: High (Based on Murphy's Sign)",
-    ],
-  },
-  {
-    title: "Differential Diagnosis",
-    items: ["Conditions: Biliary Colic, Pancreatitis, PUD", "Risk Level: Moderate"],
-  },
-  {
-    title: "Diagnostic Plan",
-    items: ["Orders: Abdominal Ultrasound, CBC", "Status: Pending / Urgent"],
-  },
-];
-
-const staticBlocks = [
-  {
-    heading: "Chief Complaint",
-    body: "Patient presents with recurring abdominal pain localized in the right upper quadrant, persisting for 3 days.",
-  },
-  {
-    heading: "History of Present Illness",
-    body: "45-year-old male with a history of mild hypertension. Reports that the current episode began after a heavy dinner on Tuesday.",
-  },
-  {
-    heading: "Physical Examination",
-    body:
-      "General: Alert and oriented x3, in moderate distress due to pain.\n" +
-      "Vitals: BP 142/88, HR 92 bpm, Temp 98.6F, SpO2 99% on RA.\n" +
-      "Abdomen: Positive Murphy's sign. Soft, but tender RUQ on deep palpation.",
-  },
-];
+const insightSections = computed(() => groupCriticalFieldsForDisplay(criticalFields.value));
 
 const noteTitle = computed(() => savedReport.value?.caseTitle || "Clinical Consultation Note");
 const caseRefLabel = computed(() => {
@@ -94,18 +70,20 @@ const exportableText = computed(() =>
   buildClinicalNotePlainText({
     title: noteTitle.value,
     caseRef: caseRefLabel.value,
-    transcript: transcriptText.value,
+    transcript: transcriptMarkdown.value,
     error: errorText.value,
-    sections: insightSections,
-    blocks: staticBlocks,
+    sections: insightSections.value,
   })
 );
 
-function buildFormattedTranscription() {
-  return {
-    sections: insightSections,
-    blocks: staticBlocks,
-  };
+async function resolveClinicianSpecialty() {
+  const specialtyId = profile.value?.specialty_id;
+  const hid = hospitalId.value;
+  if (!specialtyId || !hid) return "Radiology/Ultrasound";
+
+  const { specialties } = await fetchSpecialtiesByHospital(hid);
+  const match = (specialties ?? []).find((row) => row.id === specialtyId);
+  return match?.name?.trim() || "Radiology/Ultrasound";
 }
 
 async function invalidateReportQueries() {
@@ -121,7 +99,7 @@ async function invalidateReportQueries() {
   ]);
 }
 
-async function persistTranscription(text) {
+async function persistTranscription(templateText, fields, meta = {}) {
   saveErrorText.value = "";
 
   const hid = hospitalId.value;
@@ -135,9 +113,13 @@ async function persistTranscription(text) {
     hospitalId: hid,
     clinicianId: uid,
     departmentId: profile.value?.department_id ?? null,
-    transcription: text,
-    formattedTranscription: buildFormattedTranscription(),
-    sessionType: getRecordingSessionType(),
+    transcription: templateText,
+    criticalFields: fields,
+    formattedTranscription: meta.rawTranscript
+      ? { raw_transcript: meta.rawTranscript }
+      : null,
+    sessionType: meta.sessionType || getRecordingSessionType(),
+    caseTitle: meta.caseTitle,
   });
 
   if (error) {
@@ -182,9 +164,25 @@ async function loadSavedReport(reportUuid) {
     setLastSavedReportId(report.id);
 
     if (transcription?.transcription) {
-      transcriptText.value = String(transcription.transcription).trim();
+      transcriptMarkdown.value = String(transcription.transcription).trim();
+      criticalFields.value = normalizeCriticalFields(transcription.critical_fields);
+      if (!criticalFields.value.length) {
+        const legacySections = insightSectionsFromTranscriptionRow(transcription);
+        criticalFields.value = legacySections.flatMap((section) =>
+          section.items.map((item) => {
+            const [label, ...rest] = String(item).split(":");
+            return {
+              label: (label || section.title).trim(),
+              value: rest.join(":").trim() || item,
+              severity: "",
+              reason: "",
+            };
+          })
+        );
+      }
     } else {
-      transcriptText.value = "";
+      transcriptMarkdown.value = "";
+      criticalFields.value = [];
       errorText.value = "No transcription saved for this report yet.";
     }
   } catch (error) {
@@ -256,7 +254,7 @@ async function loadTranscription() {
   const pendingAudio = takePendingAudioForTranscription();
   if (!pendingAudio) {
     isLoading.value = false;
-    if (!transcriptText.value) {
+    if (!transcriptMarkdown.value) {
       errorText.value = "No recorded audio found. Please record again.";
       setLastTranscriptionError(errorText.value);
     }
@@ -267,21 +265,36 @@ async function loadTranscription() {
     isLoading.value = true;
     errorText.value = "";
     saveErrorText.value = "";
-    const data = await transcribeAudio(pendingAudio);
-    const text = extractTranscriptionText(data);
-    const normalized = text?.trim() || "";
-    transcriptText.value = normalized || "Transcription succeeded but returned empty text.";
-    setLastTranscription(transcriptText.value, data);
+    loadingStage.value = "Transcribing audio…";
+    const specialty = await resolveClinicianSpecialty();
+    const result = await transcribeAudioAndGenerateReport(pendingAudio, {
+      specialty,
+      onStage: (stage) => {
+        loadingStage.value = stage;
+      },
+    });
 
-    if (normalized) {
-      await persistTranscription(normalized);
+    transcriptMarkdown.value =
+      result.templateText || "Report generated but returned empty template text.";
+    criticalFields.value = result.criticalFields;
+    setLastTranscription(transcriptMarkdown.value, result, result.criticalFields);
+
+    if (result.templateText.trim()) {
+      loadingStage.value = "Saving to database…";
+      await persistTranscription(result.templateText, result.criticalFields, {
+        caseTitle: result.caseTitle,
+        sessionType: result.sessionType || getRecordingSessionType(),
+        rawTranscript: result.rawTranscript,
+      });
     }
   } catch (error) {
-    transcriptText.value = "";
+    transcriptMarkdown.value = "";
+    criticalFields.value = [];
     errorText.value = error instanceof Error ? error.message : "Transcription failed.";
     setLastTranscriptionError(errorText.value);
   } finally {
     isLoading.value = false;
+    loadingStage.value = "";
     clearPendingAudioForTranscription();
     const nextQuery = savedReport.value?.id ? { reportId: savedReport.value.id } : {};
     router.replace({ path: "/clinician/recording/transcription", query: nextQuery });
@@ -331,7 +344,7 @@ onMounted(loadTranscription);
     <section class="transcription-layout">
       <article class="note-card">
         <template v-if="isLoading">
-          <h3 class="loading-title">Report Transcription Loading...</h3>
+          <h3 class="loading-title">{{ loadingStage || "Report Transcription Loading..." }}</h3>
           <div class="skeleton-line short" />
           <div class="skeleton-line"></div>
           <div class="skeleton-line medium"></div>
@@ -354,25 +367,18 @@ onMounted(loadTranscription);
             <h4>Transcription Error</h4>
             <p>{{ errorText }}</p>
           </template>
-          <template v-else-if="transcriptText">
-            <h4>Transcript</h4>
-            <p class="transcript-body">{{ transcriptText }}</p>
+          <template v-else-if="transcriptMarkdown">
+            <ClinicalMarkdown :content="transcriptMarkdown" />
           </template>
           <template v-else>
-            <h4>Transcript</h4>
-            <p>No transcript available yet.</p>
-          </template>
-
-          <template v-for="block in staticBlocks" :key="block.heading">
-            <h4>{{ block.heading }}</h4>
-            <p class="transcript-body">{{ block.body }}</p>
+            <p>No clinical note available yet.</p>
           </template>
         </template>
       </article>
 
-      <aside v-if="!isLoading" class="insight-stack">
+      <aside v-if="!isLoading && insightSections.length" class="insight-stack">
         <article v-for="section in insightSections" :key="section.title" class="insight-card">
-          <h4>{{ section.title }}</h4>
+          <h4>{{ section.title.toUpperCase() }}</h4>
           <p v-for="item in section.items" :key="item">{{ item }}</p>
         </article>
       </aside>
@@ -381,10 +387,6 @@ onMounted(loadTranscription);
 </template>
 
 <style scoped>
-.transcript-body {
-  white-space: pre-wrap;
-}
-
 .save-error {
   color: #b42318;
   font-size: 0.9rem;

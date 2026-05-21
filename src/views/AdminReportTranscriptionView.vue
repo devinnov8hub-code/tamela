@@ -4,7 +4,9 @@ import { useRoute } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
+import ClinicalMarkdown from "../components/ClinicalMarkdown.vue";
 import { fetchReportById, fetchReportTranscription } from "../services/reportService.js";
+import { insightSectionsFromTranscriptionRow } from "../utils/criticalFields.js";
 import {
   buildClinicalNotePlainText,
   copyTextToClipboard,
@@ -55,24 +57,9 @@ const transcriptionText = computed(() => {
   return String(row.transcription).trim();
 });
 
-const formattedSections = computed(() => {
-  const raw = transcriptionRow.value?.formatted_transcription;
-  if (!raw || typeof raw !== "object") return [];
-
-  if (Array.isArray(raw)) {
-    return raw
-      .filter((item) => item && typeof item === "object")
-      .map((item) => ({
-        title: String(item.title ?? "Section"),
-        items: Array.isArray(item.items) ? item.items.map(String) : [String(item.text ?? "")],
-      }));
-  }
-
-  return Object.entries(raw).map(([title, value]) => ({
-    title,
-    items: Array.isArray(value) ? value.map(String) : [String(value)],
-  }));
-});
+const formattedSections = computed(() =>
+  insightSectionsFromTranscriptionRow(transcriptionRow.value)
+);
 
 const isLoading = computed(() => reportLoading.value || transcriptionLoading.value);
 
@@ -204,8 +191,7 @@ async function handleExportPdf() {
           <p v-if="report.createdAt" class="case-ref">Created {{ formatReportDate(report.createdAt) }}</p>
 
           <template v-if="transcriptionText">
-            <h4>Transcription</h4>
-            <p class="transcription-body">{{ transcriptionText }}</p>
+            <ClinicalMarkdown :content="transcriptionText" />
           </template>
           <p v-else class="auth-form-message auth-form-message--info">
             No transcription has been saved for this report yet.

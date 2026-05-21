@@ -2,6 +2,7 @@ let pendingAudioBlob = null;
 let lastTranscript = "";
 let lastTranscriptionError = "";
 let lastRaw = null;
+let lastCriticalFields = [];
 let recordingSessionType = "Live Recording";
 let lastSavedReportId = "";
 
@@ -39,9 +40,10 @@ export function clearPendingAudioForTranscription() {
   pendingAudioBlob = null;
 }
 
-export function setLastTranscription(text, raw = null) {
+export function setLastTranscription(text, raw = null, criticalFields = []) {
   lastTranscript = text;
   lastRaw = raw;
+  lastCriticalFields = Array.isArray(criticalFields) ? criticalFields : [];
   lastTranscriptionError = "";
 }
 
@@ -49,10 +51,16 @@ export function setLastTranscriptionError(msg) {
   lastTranscriptionError = msg;
   lastTranscript = "";
   lastRaw = null;
+  lastCriticalFields = [];
 }
 
 export function getLastTranscription() {
-  return { text: lastTranscript, error: lastTranscriptionError, raw: lastRaw };
+  return {
+    text: lastTranscript,
+    error: lastTranscriptionError,
+    raw: lastRaw,
+    criticalFields: lastCriticalFields,
+  };
 }
 
 /** Call when starting a new live recording so stale transcript does not flash. */
@@ -61,6 +69,7 @@ export function clearScribeSession() {
   lastTranscript = "";
   lastTranscriptionError = "";
   lastRaw = null;
+  lastCriticalFields = [];
   recordingSessionType = "Live Recording";
   lastSavedReportId = "";
 }

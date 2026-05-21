@@ -102,7 +102,6 @@ export async function downloadTextAsPdf(text, filename = "clinical-note.pdf") {
  *   transcript?: string,
  *   error?: string,
  *   sections?: Array<{ title: string, items: string[] }>,
- *   blocks?: Array<{ heading: string, body: string }>,
  * }} parts
  */
 export function buildClinicalNotePlainText(parts) {
@@ -117,13 +116,9 @@ export function buildClinicalNotePlainText(parts) {
   if (parts.error?.trim()) {
     lines.push("Transcription Error", parts.error.trim());
   } else if (parts.transcript?.trim()) {
-    lines.push("Transcript", parts.transcript.trim());
+    lines.push(parts.transcript.trim());
   } else {
-    lines.push("Transcript", "(No transcript available)");
-  }
-
-  for (const block of parts.blocks ?? []) {
-    lines.push("", block.heading, block.body);
+    lines.push("(No clinical note available)");
   }
 
   for (const section of parts.sections ?? []) {
