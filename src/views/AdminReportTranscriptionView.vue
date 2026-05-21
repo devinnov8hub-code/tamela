@@ -8,9 +8,9 @@ import ClinicalMarkdown from "../components/ClinicalMarkdown.vue";
 import { fetchReportById, fetchReportTranscription } from "../services/reportService.js";
 import { insightSectionsFromTranscriptionRow } from "../utils/criticalFields.js";
 import {
-  buildClinicalNotePlainText,
-  copyTextToClipboard,
-  downloadTextAsPdf,
+  buildClinicalNoteDocument,
+  copyClinicalNotePreview,
+  downloadClinicalNotePdf,
 } from "../utils/clinicalNoteExport.js";
 import { formatReportDate } from "../utils/formatDateTime.js";
 
@@ -63,9 +63,11 @@ const formattedSections = computed(() =>
 
 const isLoading = computed(() => reportLoading.value || transcriptionLoading.value);
 
-const exportableText = computed(() => {
+const exportDocument = computed(() => {
   const row = report.value;
-  if (!row) return "";
+  if (!row) {
+    return { html: "", plainText: "" };
+  }
 
   const caseRef = [
     `Report ID: ${row.reportId}`,
@@ -76,7 +78,7 @@ const exportableText = computed(() => {
     .filter(Boolean)
     .join(" · ");
 
-  return buildClinicalNotePlainText({
+  return buildClinicalNoteDocument({
     title: row.caseTitle,
     caseRef,
     transcript: transcriptionText.value,
@@ -89,7 +91,7 @@ const exportDisabled = computed(
     isLoading.value ||
     copyInProgress.value ||
     exportInProgress.value ||
-    !exportableText.value.trim()
+    !exportDocument.value.plainText.trim()
 );
 
 function flashAction(message) {
@@ -108,8 +110,8 @@ async function handleSmartCopy() {
   actionMessage.value = "";
 
   try {
-    await copyTextToClipboard(exportableText.value);
-    flashAction("Copied to clipboard.");
+    await copyClinicalNotePreview(exportDocument.value);
+    flashAction("Copied formatted note to clipboard.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Copy failed.");
   } finally {
@@ -125,7 +127,7 @@ async function handleExportPdf() {
 
   try {
     const id = report.value?.reportId?.replace(/[^\w-]+/g, "-") || "report";
-    await downloadTextAsPdf(exportableText.value, `${id}.pdf`);
+    await downloadClinicalNotePdf(exportDocument.value, `${id}.pdf`);
     flashAction("PDF download started.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Export failed.");

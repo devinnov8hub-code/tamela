@@ -18,9 +18,9 @@ import {
   normalizeCriticalFields,
 } from "../utils/criticalFields.js";
 import {
-  buildClinicalNotePlainText,
-  copyTextToClipboard,
-  downloadTextAsPdf,
+  buildClinicalNoteDocument,
+  copyClinicalNotePreview,
+  downloadClinicalNotePdf,
 } from "../utils/clinicalNoteExport.js";
 import {
   clearPendingAudioForTranscription,
@@ -66,8 +66,8 @@ const caseRefLabel = computed(() => {
   return "Report ID: (not saved yet)";
 });
 
-const exportableText = computed(() =>
-  buildClinicalNotePlainText({
+const exportDocument = computed(() =>
+  buildClinicalNoteDocument({
     title: noteTitle.value,
     caseRef: caseRefLabel.value,
     transcript: transcriptMarkdown.value,
@@ -197,7 +197,7 @@ const exportDisabled = computed(
     isLoading.value ||
     copyInProgress.value ||
     exportInProgress.value ||
-    !exportableText.value.trim()
+    !exportDocument.value.plainText.trim()
 );
 
 function flashAction(message) {
@@ -233,7 +233,7 @@ async function handleExportPdf() {
 
   try {
     const stamp = new Date().toISOString().slice(0, 10);
-    await downloadTextAsPdf(exportableText.value, `clinical-note-${stamp}.pdf`);
+    await downloadClinicalNotePdf(exportDocument.value, `clinical-note-${stamp}.pdf`);
     flashAction("PDF download started.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Export failed.");

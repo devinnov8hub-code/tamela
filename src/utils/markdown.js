@@ -91,3 +91,58 @@ function inlineMarkdown(text) {
   html = html.replace(/`(.+?)`/g, "<code>$1</code>");
   return html;
 }
+
+/**
+ * Readable plain text matching the on-screen preview (no markdown syntax).
+ * @param {string} markdown
+ */
+export function markdownToPlainPreview(markdown) {
+  const source = (markdown || "").trim();
+  if (!source) return "";
+
+  const lines = source.split(/\r?\n/);
+  const out = [];
+  let listOpen = false;
+
+  function closeList() {
+    listOpen = false;
+  }
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      closeList();
+      out.push("");
+      continue;
+    }
+
+    const heading = trimmed.match(/^#{1,4}\s+(.+)$/);
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+
+    if (heading) {
+      closeList();
+      out.push(stripInlineMarkdown(heading[1]));
+      continue;
+    }
+    if (bullet) {
+      out.push(`• ${stripInlineMarkdown(bullet[1])}`);
+      listOpen = true;
+      continue;
+    }
+
+    closeList();
+    out.push(stripInlineMarkdown(trimmed));
+  }
+
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * @param {string} text
+ */
+function stripInlineMarkdown(text) {
+  return String(text)
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/`(.+?)`/g, "$1");
+}
