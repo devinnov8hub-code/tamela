@@ -4,13 +4,11 @@ import { useRoute } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
-import ClinicalMarkdown from "../components/ClinicalMarkdown.vue";
 import { fetchReportById, fetchReportTranscription } from "../services/reportService.js";
-import { insightSectionsFromTranscriptionRow } from "../utils/criticalFields.js";
 import {
-  buildClinicalNoteDocument,
-  copyClinicalNotePreview,
-  downloadClinicalNotePdf,
+  buildClinicalNotePlainText,
+  copyTextToClipboard,
+  downloadTextAsPdf,
 } from "../utils/clinicalNoteExport.js";
 import { formatReportDate } from "../utils/formatDateTime.js";
 
@@ -57,17 +55,30 @@ const transcriptionText = computed(() => {
   return String(row.transcription).trim();
 });
 
-const formattedSections = computed(() =>
-  insightSectionsFromTranscriptionRow(transcriptionRow.value)
-);
+const formattedSections = computed(() => {
+  const raw = transcriptionRow.value?.formatted_transcription;
+  if (!raw || typeof raw !== "object") return [];
+
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((item) => item && typeof item === "object")
+      .map((item) => ({
+        title: String(item.title ?? "Section"),
+        items: Array.isArray(item.items) ? item.items.map(String) : [String(item.text ?? "")],
+      }));
+  }
+
+  return Object.entries(raw).map(([title, value]) => ({
+    title,
+    items: Array.isArray(value) ? value.map(String) : [String(value)],
+  }));
+});
 
 const isLoading = computed(() => reportLoading.value || transcriptionLoading.value);
 
-const exportDocument = computed(() => {
+const exportableText = computed(() => {
   const row = report.value;
-  if (!row) {
-    return { html: "", plainText: "" };
-  }
+  if (!row) return "";
 
   const caseRef = [
     `Report ID: ${row.reportId}`,
@@ -78,7 +89,7 @@ const exportDocument = computed(() => {
     .filter(Boolean)
     .join(" · ");
 
-  return buildClinicalNoteDocument({
+  return buildClinicalNotePlainText({
     title: row.caseTitle,
     caseRef,
     transcript: transcriptionText.value,
@@ -91,7 +102,7 @@ const exportDisabled = computed(
     isLoading.value ||
     copyInProgress.value ||
     exportInProgress.value ||
-    !exportDocument.value.plainText.trim()
+    !exportableText.value.trim()
 );
 
 function flashAction(message) {
@@ -110,8 +121,8 @@ async function handleSmartCopy() {
   actionMessage.value = "";
 
   try {
-    await copyClinicalNotePreview(exportDocument.value);
-    flashAction("Copied formatted note to clipboard.");
+    await copyTextToClipboard(exportableText.value);
+    flashAction("Copied to clipboard.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Copy failed.");
   } finally {
@@ -127,7 +138,7 @@ async function handleExportPdf() {
 
   try {
     const id = report.value?.reportId?.replace(/[^\w-]+/g, "-") || "report";
-    await downloadClinicalNotePdf(exportDocument.value, `${id}.pdf`);
+    await downloadTextAsPdf(exportableText.value, `${id}.pdf`);
     flashAction("PDF download started.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Export failed.");
@@ -193,7 +204,8 @@ async function handleExportPdf() {
           <p v-if="report.createdAt" class="case-ref">Created {{ formatReportDate(report.createdAt) }}</p>
 
           <template v-if="transcriptionText">
-            <ClinicalMarkdown :content="transcriptionText" />
+            <h4>Transcription</h4>
+            <p class="transcription-body">{{ transcriptionText }}</p>
           </template>
           <p v-else class="auth-form-message auth-form-message--info">
             No transcription has been saved for this report yet.

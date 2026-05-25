@@ -13,6 +13,30 @@ export function formatMemberSince(iso) {
  * @param {string | null | undefined} iso
  * @returns {string}
  */
+/**
+ * Table timestamp e.g. "9.30 Am Feb 21, 2026" (clinician reports page).
+ * @param {string | null | undefined} iso
+ * @returns {string}
+ */
+export function formatClinicianReportTimestamp(iso) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? "Pm" : "Am";
+  const hour12 = hours % 12 || 12;
+  const minutePart = String(minutes).padStart(2, "0");
+  const datePart = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return `${hour12}.${minutePart} ${ampm} ${datePart}`;
+}
+
 export function formatReportDate(iso) {
   if (!iso) return "—";
   const date = new Date(iso);

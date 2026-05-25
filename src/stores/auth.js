@@ -129,6 +129,31 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
+  /** @returns {Promise<import('vue-router').Router | null>} */
+  async function getRouter() {
+    const mod = await import("../router/index.js");
+    return mod.default;
+  }
+
+  async function redirectToAuthLogin() {
+    const router = await getRouter();
+    if (!router) return;
+
+    const current = router.currentRoute.value;
+    if (current.path.startsWith("/auth")) return;
+
+    const expiredMessage = sessionExpiredMessage.value;
+    await router.replace({
+      name: "auth-login",
+      query: expiredMessage
+        ? { reason: "session", message: expiredMessage }
+        : {},
+    });
+    if (expiredMessage) {
+      sessionExpiredMessage.value = "";
+    }
+  }
+
   /**
    * Clear invalid sessions and local storage token.
    * @param {string} [message]
@@ -152,6 +177,8 @@ export const useAuthStore = defineStore("auth", () => {
         console.warn("[auth] signOut failed", err);
       }
     }
+
+    await redirectToAuthLogin();
   }
 
   function finishBootstrap() {
@@ -349,6 +376,8 @@ export const useAuthStore = defineStore("auth", () => {
     if (supabase) {
       await supabase.auth.signOut({ scope: "local" });
     }
+
+    await redirectToAuthLogin();
   }
 
   function consumeSessionExpiredMessage() {
@@ -373,8 +402,9 @@ export const useAuthStore = defineStore("auth", () => {
         return;
       }
 
-      if (!session?.user) {
+      if (event === "SIGNED_OUT" || !session?.user) {
         clearAuthState();
+        await redirectToAuthLogin();
         return;
       }
 

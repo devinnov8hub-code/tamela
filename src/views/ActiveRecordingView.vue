@@ -1,6 +1,6 @@
 <script setup>
 import AppShell from "../components/AppShell.vue";
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   clearScribeSession,
@@ -10,7 +10,6 @@ import {
 
 const waveformBars = [30, 56, 80, 48, 34, 42, 92, 118, 96, 52, 76, 58, 36, 28];
 const router = useRouter();
-const fileInputRef = useTemplateRef("fileInput");
 
 const isRecording = ref(false);
 const elapsedMs = ref(0);
@@ -24,11 +23,7 @@ let startedAt = 0;
 let accumulatedMs = 0;
 
 function pickMimeType() {
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4",
-  ];
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
   for (const t of candidates) {
     if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) return t;
   }
@@ -188,31 +183,31 @@ function stopRecording() {
   }
 }
 
-function triggerFilePick() {
-  fileInputRef.value?.click();
-}
-
-function onFileSelected(ev) {
-  const file = ev.target?.files?.[0];
-  ev.target.value = "";
-  if (!file) return;
-  setRecordingSessionType("Audio Upload");
-  setPendingAudioForTranscription(file);
-  router.push({ path: "/clinician/recording/transcription", query: { loading: "1" } });
-}
+const statusHeadline = computed(() => {
+  if (isFinishing.value) return "Finishing recording…";
+  if (isRecording.value) return "Recording In Progress...";
+  if (mediaRecorderRef.value?.state === "paused") return "Recording Paused";
+  return "Ready";
+});
 
 const timeParts = computed(() => {
   const totalMs = elapsedMs.value;
   const centis = Math.floor((totalMs % 1000) / 10);
   const seconds = Math.floor((totalMs / 1000) % 60);
   const minutes = Math.floor((totalMs / 1000 / 60) % 60);
+  const hours = Math.floor(totalMs / 1000 / 60 / 60);
 
+  const hh = String(hours).padStart(2, "0");
   const mm = String(minutes).padStart(2, "0");
   const ss = String(seconds).padStart(2, "0");
   const cs = String(centis).padStart(2, "0");
 
-  return { main: `${mm} : ${ss}`, fraction: cs };
+  return { main: `${hh} : ${mm} : ${ss}`, fraction: cs };
 });
+
+const showRecPill = computed(
+  () => isRecording.value || mediaRecorderRef.value?.state === "recording"
+);
 
 onMounted(() => {
   clearScribeSession();
@@ -240,110 +235,71 @@ onBeforeUnmount(() => {
     title="Active Session"
     subtitle="Recording clinical observations"
     active-nav="Active Recording"
+    :show-search="false"
+    :show-notifications="false"
   >
-    <section class="active-header-row">
-      <div class="recording-headline">
-        <h2>
-          {{
-            isFinishing
-              ? "Finishing recording…"
-              : isRecording
-                ? "Recording In Progress..."
-                : mediaRecorderRef?.state === "paused"
-                  ? "Recording Paused"
-                  : "Ready"
-          }}
-        </h2>
-        <p>Recording clinical observations and patient symptoms</p>
-        <p v-if="micError" class="mic-error" role="alert">{{ micError }}</p>
-      </div>
-      <input
-        ref="fileInput"
-        type="file"
-        class="sr-only"
-        accept="audio/*,.webm,.wav,.mp3,.m4a,.ogg"
-        aria-hidden="true"
-        @change="onFileSelected"
-      />
-      <button
-        type="button"
-        class="secondary-btn small upload-audio-btn"
-        :disabled="isFinishing"
-        @click="triggerFilePick"
-      >
-        <font-awesome-icon :icon="['fas', 'microphone']" />
-        Upload Audio
-      </button>
+    <section class="active-recording-status">
+      <h2>{{ statusHeadline }}</h2>
+      <p>Recording clinical observations and patient symptoms</p>
+      <p v-if="micError" class="active-recording-error" role="alert">{{ micError }}</p>
     </section>
 
-    <section class="single-recording-panel">
-      <article class="recording-card active">
-        <div v-if="isRecording" class="rec-pill">Rec</div>
+    <section class="single-recording-panel active-recording-panel">
+      <article
+        class="recording-card active-recording-card"
+        :class="{ 'active-recording-card--busy': isFinishing }"
+        :aria-busy="isFinishing"
+      >
+        <div v-if="showRecPill" class="rec-pill">
+          <span class="rec-pill-dot" aria-hidden="true" />
+          Rec
+        </div>
 
-        <div class="waveform">
+        <div class="waveform active-waveform">
           <span
             v-for="(h, idx) in waveformBars"
             :key="idx"
             :class="['wave-bar', { live: isRecording }]"
             :style="{ height: `${h}px` }"
-          ></span>
+          />
         </div>
 
-        <h3 class="record-timer">
-          {{ timeParts.main }}<span>.{{ timeParts.fraction }}</span>
+        <h3 class="record-timer active-record-timer">
+          {{ timeParts.main }}<span class="record-timer-fraction">.{{ timeParts.fraction }}</span>
         </h3>
 
-        <div class="record-controls">
-          <button
-            type="button"
-            class="control-btn muted"
-            :disabled="isFinishing || !mediaRecorderRef || mediaRecorderRef.state === 'inactive'"
-            @click="isRecording ? pauseRecording() : resumeRecording()"
-          >
-            <span>{{ isRecording ? "Ⅱ" : "▶" }}</span>
-          </button>
-          <button type="button" class="control-btn mic" aria-hidden="true">
-            <span>◖</span>
-          </button>
-          <button type="button" class="control-btn stop" :disabled="isFinishing" @click="stopRecording">
-            <span>■</span>
-          </button>
-        </div>
+        <div class="record-controls active-record-controls">
+          <div class="active-control-slot">
+            <button
+              type="button"
+              class="control-btn muted"
+              :disabled="isFinishing || !mediaRecorderRef || mediaRecorderRef.state === 'inactive'"
+              :aria-label="isRecording ? 'Pause recording' : 'Resume recording'"
+              @click="isRecording ? pauseRecording() : resumeRecording()"
+            >
+              <font-awesome-icon :icon="['fas', isRecording ? 'pause' : 'play']" />
+            </button>
+            <span class="active-control-label">{{ isRecording ? "Pause" : "Resume" }}</span>
+          </div>
 
-        <div class="control-labels">
-          <span>{{ isRecording ? "Pause" : "Resume" }}</span>
-          <span></span>
-          <span>Stop</span>
+          <button type="button" class="control-btn mic" tabindex="-1" aria-hidden="true">
+            <font-awesome-icon :icon="['fas', 'microphone']" />
+          </button>
+
+          <div class="active-control-slot">
+            <button
+              type="button"
+              class="control-btn stop"
+              :disabled="isFinishing"
+              aria-label="Stop recording"
+              @click="stopRecording"
+            >
+              <font-awesome-icon :icon="['fas', 'stop']" />
+            </button>
+            <span class="active-control-label">Stop</span>
+          </div>
         </div>
       </article>
     </section>
   </AppShell>
 </template>
-
-<style scoped>
-.mic-error {
-  color: #b42318;
-  font-size: 0.9rem;
-  margin-top: 0.5rem;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.upload-audio-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 148px;
-  justify-content: center;
-}
-</style>

@@ -21,6 +21,6 @@ export function isAppRole(value) {
  */
 export function roleDashboardPath(role) {
   if (role === ROLE_ADMIN) return "/admin/dashboard";
-  if (role === ROLE_CLINICIAN) return "/clinician/dashboard";
+  if (role === ROLE_CLINICIAN) return "/clinician/recording/fresh";
   return "/auth/login";
 }

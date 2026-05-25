@@ -45,7 +45,7 @@ const routes = [
   {
     path: "/clinician",
     children: [
-      { path: "", redirect: { name: "clinician-dashboard" } },
+      { path: "", redirect: { name: "clinician-recording-fresh" } },
       {
         path: "dashboard",
         name: "clinician-dashboard",

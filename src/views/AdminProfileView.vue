@@ -1,6 +1,5 @@
 <script setup>
 import { computed, ref } from "vue";
-import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
@@ -10,7 +9,6 @@ import { fetchSpecialtiesByHospital } from "../services/specialtyService.js";
 import { profileDisplayName } from "../utils/profileDisplay.js";
 import { formatLastLogin, formatMemberSince } from "../utils/formatDateTime.js";
 
-const router = useRouter();
 const search = ref("");
 const { profile, hospitalId, user, signOut } = useAuth();
 
@@ -89,7 +87,6 @@ const personalFields = computed(() => [
 
 async function handleLogout() {
   await signOut();
-  router.push({ name: "auth-login" });
 }
 </script>
 
