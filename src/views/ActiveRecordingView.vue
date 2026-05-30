@@ -160,7 +160,7 @@ function finalizeBlobAndNavigate() {
   setPendingAudioForTranscription(blob);
   isFinishing.value = false;
   isRecording.value = false;
-  router.push({ path: "/clinician/recording/transcription", query: { loading: "1" } });
+  router.push({ path: "/clinician/recording/report", query: { loading: "1" } });
 }
 
 function stopRecording() {

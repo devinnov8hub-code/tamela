@@ -33,6 +33,17 @@ async function loadJsPDF() {
 }
 
 /**
+ * @param {string} value
+ */
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
  * @param {string} text
  */
 export async function copyTextToClipboard(text) {
@@ -54,6 +65,69 @@ export async function copyTextToClipboard(text) {
   textarea.select();
   const ok = document.execCommand("copy");
   document.body.removeChild(textarea);
+
+  if (!ok) {
+    throw new Error("Could not copy to clipboard.");
+  }
+}
+
+/**
+ * Copy HTML to the clipboard so paste targets (Word, email, etc.) keep formatting.
+ * @param {string} html
+ * @param {string} [plainText]
+ */
+export async function copyRichTextToClipboard(html, plainText) {
+  const htmlContent = html?.trim();
+  const plain = (plainText ?? htmlToPlainText(htmlContent)).trim();
+
+  if (!htmlContent && !plain) {
+    throw new Error("Nothing to copy yet.");
+  }
+
+  const wrappedHtml = htmlContent.startsWith("<")
+    ? htmlContent
+    : `<div>${escapeHtml(htmlContent)}</div>`;
+
+  if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+    try {
+      const htmlBlob = new Blob([wrappedHtml], { type: "text/html" });
+      const textBlob = new Blob([plain], { type: "text/plain" });
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": htmlBlob,
+          "text/plain": textBlob,
+        }),
+      ]);
+      return;
+    } catch {
+      // Fall through to selection-based copy.
+    }
+  }
+
+  copyRichTextWithSelection(wrappedHtml);
+}
+
+/**
+ * @param {string} html
+ */
+function copyRichTextWithSelection(html) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  container.setAttribute("contenteditable", "true");
+  container.style.position = "fixed";
+  container.style.left = "-9999px";
+  container.style.top = "0";
+  document.body.appendChild(container);
+
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(container);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+
+  const ok = document.execCommand("copy");
+  selection?.removeAllRanges();
+  document.body.removeChild(container);
 
   if (!ok) {
     throw new Error("Could not copy to clipboard.");
@@ -96,11 +170,33 @@ export async function downloadTextAsPdf(text, filename = "clinical-note.pdf") {
 }
 
 /**
+ * @param {string} html
+ */
+export function htmlToPlainText(html) {
+  if (!html?.trim()) return "";
+
+  if (typeof document !== "undefined") {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    return (container.textContent || container.innerText || "").replace(/\u00a0/g, " ").trim();
+  }
+
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\u00a0/g, " ")
+    .trim();
+}
+
+/**
  * @param {{
  *   title?: string,
  *   caseRef?: string,
  *   transcript?: string,
  *   error?: string,
+ *   includeTranscript?: boolean,
  *   sections?: Array<{ title: string, items: string[] }>,
  *   blocks?: Array<{ heading: string, body: string }>,
  * }} parts
@@ -115,23 +211,99 @@ export function buildClinicalNotePlainText(parts) {
   lines.push("");
 
   if (parts.error?.trim()) {
-    lines.push("Transcription Error", parts.error.trim());
-  } else if (parts.transcript?.trim()) {
-    lines.push("Transcript", parts.transcript.trim());
-  } else {
-    lines.push("Transcript", "(No transcript available)");
+    lines.push("Report Error", parts.error.trim());
+    return lines.join("\n");
   }
 
-  for (const block of parts.blocks ?? []) {
-    lines.push("", block.heading, block.body);
+  const blocks = parts.blocks ?? [];
+  if (blocks.length) {
+    for (const block of blocks) {
+      if (block.heading?.trim()) {
+        lines.push(block.heading.trim());
+      }
+      const body = htmlToPlainText(block.body);
+      if (body) lines.push(body);
+      lines.push("");
+    }
+  } else if (parts.transcript?.trim()) {
+    lines.push(parts.transcript.trim());
+    lines.push("");
+  } else {
+    lines.push("(No report content available)");
+    lines.push("");
   }
 
   for (const section of parts.sections ?? []) {
-    lines.push("", section.title);
+    lines.push(section.title);
     for (const item of section.items) {
       lines.push(`• ${item}`);
     }
+    lines.push("");
   }
 
-  return lines.join("\n");
+  if (parts.includeTranscript && parts.transcript?.trim()) {
+    lines.push("Source Transcript", parts.transcript.trim());
+  }
+
+  return lines.join("\n").trim();
+}
+
+/**
+ * @param {{
+ *   title?: string,
+ *   caseRef?: string,
+ *   transcript?: string,
+ *   error?: string,
+ *   includeTranscript?: boolean,
+ *   sections?: Array<{ title: string, items: string[] }>,
+ *   blocks?: Array<{ heading: string, body: string }>,
+ * }} parts
+ */
+export function buildClinicalNoteHtml(parts) {
+  const chunks = [];
+
+  chunks.push(`<h2>${escapeHtml(parts.title || "Clinical Consultation Note")}</h2>`);
+
+  if (parts.caseRef) {
+    chunks.push(`<p>${escapeHtml(parts.caseRef)}</p>`);
+  }
+
+  if (parts.error?.trim()) {
+    chunks.push(`<h3>${escapeHtml("Report Error")}</h3>`);
+    chunks.push(`<p>${escapeHtml(parts.error.trim())}</p>`);
+    return chunks.join("");
+  }
+
+  const blocks = parts.blocks ?? [];
+  if (blocks.length) {
+    for (const block of blocks) {
+      if (block.heading?.trim()) {
+        chunks.push(`<h3>${escapeHtml(block.heading.trim())}</h3>`);
+      }
+      const body = block.body?.trim();
+      if (body) {
+        chunks.push(`<div>${body}</div>`);
+      }
+    }
+  } else if (parts.transcript?.trim()) {
+    chunks.push(`<p>${escapeHtml(parts.transcript.trim()).replace(/\n/g, "<br>")}</p>`);
+  } else {
+    chunks.push(`<p>${escapeHtml("(No report content available)")}</p>`);
+  }
+
+  for (const section of parts.sections ?? []) {
+    chunks.push(`<h3>${escapeHtml(section.title)}</h3>`);
+    chunks.push("<ul>");
+    for (const item of section.items) {
+      chunks.push(`<li>${escapeHtml(item)}</li>`);
+    }
+    chunks.push("</ul>");
+  }
+
+  if (parts.includeTranscript && parts.transcript?.trim()) {
+    chunks.push(`<h3>${escapeHtml("Source Transcript")}</h3>`);
+    chunks.push(`<p>${escapeHtml(parts.transcript.trim()).replace(/\n/g, "<br>")}</p>`);
+  }
+
+  return chunks.join("");
 }

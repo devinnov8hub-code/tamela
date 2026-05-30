@@ -337,6 +337,112 @@ export async function saveReportWithTranscription(payload) {
 }
 
 /**
+ * Update saved report note content after clinician edits.
+ * @param {{
+ *   hospitalId: string,
+ *   reportId: string,
+ *   clinicianId: string,
+ *   formattedTranscription: unknown,
+ *   caseTitle?: string,
+ *   sessionType?: string,
+ * }} payload
+ */
+export async function updateReportContent(payload) {
+  const client = requireSupabase();
+  const {
+    hospitalId,
+    reportId,
+    clinicianId,
+    formattedTranscription,
+    caseTitle,
+    sessionType,
+  } = payload;
+
+  const { data: existing, error: fetchError } = await client
+    .from("reports")
+    .select("id")
+    .eq("id", reportId)
+    .eq("hospital_id", hospitalId)
+    .eq("clinician_id", clinicianId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { report: null, error: fetchError };
+  }
+
+  if (!existing) {
+    return { report: null, error: { message: "Report not found." } };
+  }
+
+  const reportPatch = {};
+  if (caseTitle?.trim()) reportPatch.case_title = caseTitle.trim();
+  if (sessionType?.trim()) reportPatch.session_type = sessionType.trim();
+  if (Object.keys(reportPatch).length) {
+    reportPatch.updated_by = clinicianId;
+    const { error: reportUpdateError } = await client
+      .from("reports")
+      .update(reportPatch)
+      .eq("id", reportId);
+
+    if (reportUpdateError) {
+      return { report: null, error: reportUpdateError };
+    }
+  }
+
+  const { data: transcriptionRow, error: transcriptionFetchError } = await client
+    .from("report_transcriptions")
+    .select("id")
+    .eq("report_id", reportId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (transcriptionFetchError) {
+    return { report: null, error: transcriptionFetchError };
+  }
+
+  if (!transcriptionRow?.id) {
+    return { report: null, error: { message: "Report transcription row not found." } };
+  }
+
+  const { error: transcriptionUpdateError } = await client
+    .from("report_transcriptions")
+    .update({
+      formatted_transcription: formattedTranscription,
+      updated_by: clinicianId,
+    })
+    .eq("id", transcriptionRow.id);
+
+  if (transcriptionUpdateError) {
+    return { report: null, error: transcriptionUpdateError };
+  }
+
+  const { data: report, error: reloadError } = await client
+    .from("reports")
+    .select("id, report_id, case_title, session_type, status, created_at")
+    .eq("id", reportId)
+    .maybeSingle();
+
+  if (reloadError) {
+    return { report: null, error: reloadError };
+  }
+
+  return {
+    report: report
+      ? {
+          id: String(report.id),
+          reportId: report.report_id,
+          caseTitle: report.case_title,
+          sessionType: report.session_type,
+          status: mapReportStatusUi(report.status),
+          createdAt: report.created_at ?? null,
+        }
+      : null,
+    error: null,
+  };
+}
+
+/**
  * @param {string} hospitalId
  */
 export async function fetchAdminDashboardStats(hospitalId) {

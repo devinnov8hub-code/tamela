@@ -128,10 +128,44 @@ export function templateTextToBlocks(templateText) {
 }
 
 /**
+ * Unwrap common API envelopes so template_text / critical_fields are at the top level.
+ * @param {unknown} data
+ * @returns {Record<string, unknown>}
+ */
+export function unwrapReportApiPayload(data) {
+  if (!data || typeof data !== "object") {
+    return {};
+  }
+
+  /** @type {Record<string, unknown>} */
+  const root = /** @type {Record<string, unknown>} */ (data);
+
+  const hasReportShape = (obj) =>
+    typeof obj.template_text === "string" ||
+    Array.isArray(obj.critical_fields) ||
+    typeof obj.case_title === "string";
+
+  if (hasReportShape(root)) {
+    return root;
+  }
+
+  const nestedKeys = ["data", "result", "report", "payload", "response", "output"];
+  for (const key of nestedKeys) {
+    const nested = root[key];
+    if (nested && typeof nested === "object" && hasReportShape(/** @type {Record<string, unknown>} */ (nested))) {
+      return /** @type {Record<string, unknown>} */ (nested);
+    }
+  }
+
+  return root;
+}
+
+/**
  * @param {Record<string, unknown> | null | undefined} data
  */
 export function normalizeReportFromTextResponse(data) {
-  if (!data || typeof data !== "object") {
+  const payload = unwrapReportApiPayload(data);
+  if (!payload || typeof payload !== "object") {
     return {
       templateText: "",
       criticalFields: [],
@@ -140,8 +174,8 @@ export function normalizeReportFromTextResponse(data) {
     };
   }
 
-  const criticalFields = Array.isArray(data.critical_fields)
-    ? data.critical_fields.map((f) => ({
+  const criticalFields = Array.isArray(payload.critical_fields)
+    ? payload.critical_fields.map((f) => ({
         label: String(f?.label ?? ""),
         value: String(f?.value ?? ""),
         severity: typeof f?.severity === "string" ? f.severity : "",
@@ -150,9 +184,97 @@ export function normalizeReportFromTextResponse(data) {
     : [];
 
   return {
-    templateText: typeof data.template_text === "string" ? data.template_text : "",
+    templateText: typeof payload.template_text === "string" ? payload.template_text : "",
     criticalFields,
-    caseTitle: typeof data.case_title === "string" ? data.case_title.trim() : "",
-    sessionType: typeof data.session_type === "string" ? data.session_type.trim() : "",
+    caseTitle: typeof payload.case_title === "string" ? payload.case_title.trim() : "",
+    sessionType: typeof payload.session_type === "string" ? payload.session_type.trim() : "",
   };
+}
+
+/**
+ * @param {Array<{ heading: string, html: string }>} blocks
+ * @param {InsightSection[]} insightSections
+ * @param {CriticalField[]} [criticalFields]
+ */
+export function buildFormattedReportPayload(blocks, insightSections, criticalFields = []) {
+  return {
+    blocks: blocks.map((block) => ({
+      heading: block.heading,
+      html: block.html,
+    })),
+    sections: insightSections,
+    criticalFields,
+    templateText: blocks
+      .map((block) => {
+        const body = htmlToPlainTextForExport(block.html);
+        return block.heading ? `## ${block.heading}\n${body}` : body;
+      })
+      .filter(Boolean)
+      .join("\n\n"),
+  };
+}
+
+/**
+ * @param {string} html
+ */
+function htmlToPlainTextForExport(html) {
+  if (!html?.trim()) return "";
+  if (typeof document !== "undefined") {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    return (container.textContent || container.innerText || "").replace(/\u00a0/g, " ").trim();
+  }
+  return html.replace(/<[^>]+>/g, "").trim();
+}
+
+/**
+ * @param {unknown} formatted
+ * @returns {{ blocks: NoteBlock[], insightSections: InsightSection[], criticalFields: CriticalField[] } | null}
+ */
+export function parseSavedFormattedReport(formatted) {
+  if (!formatted || typeof formatted !== "object") {
+    return null;
+  }
+
+  /** @type {Record<string, unknown>} */
+  const raw = /** @type {Record<string, unknown>} */ (formatted);
+
+  if (Array.isArray(raw.blocks) && raw.blocks.length) {
+    const blocks = raw.blocks.map((block) => {
+      const row = /** @type {Record<string, unknown>} */ (block ?? {});
+      return {
+        heading: String(row.heading ?? "Section"),
+        html: String(row.html ?? row.body ?? ""),
+      };
+    });
+
+    const insightSections = Array.isArray(raw.sections)
+      ? /** @type {InsightSection[]} */ (raw.sections)
+      : criticalFieldsToInsightSections(
+          Array.isArray(raw.criticalFields) ? /** @type {CriticalField[]} */ (raw.criticalFields) : [],
+          []
+        );
+
+    const criticalFields = Array.isArray(raw.criticalFields)
+      ? /** @type {CriticalField[]} */ (raw.criticalFields)
+      : [];
+
+    return { blocks, insightSections, criticalFields };
+  }
+
+  if (typeof raw.templateText === "string" && raw.templateText.trim()) {
+    const normalized = normalizeReportFromTextResponse({
+      template_text: raw.templateText,
+      critical_fields: raw.criticalFields ?? [],
+      case_title: raw.caseTitle,
+      session_type: raw.sessionType,
+    });
+    return {
+      blocks: templateTextToBlocks(normalized.templateText),
+      insightSections: criticalFieldsToInsightSections(normalized.criticalFields, []),
+      criticalFields: normalized.criticalFields,
+    };
+  }
+
+  return null;
 }

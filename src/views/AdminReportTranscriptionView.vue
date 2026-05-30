@@ -6,10 +6,12 @@ import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
 import { fetchReportById, fetchReportTranscription } from "../services/reportService.js";
 import {
+  buildClinicalNoteHtml,
   buildClinicalNotePlainText,
-  copyTextToClipboard,
+  copyRichTextToClipboard,
   downloadTextAsPdf,
 } from "../utils/clinicalNoteExport.js";
+import { parseSavedFormattedReport } from "../utils/reportFromTextFormat.js";
 import { formatReportDate } from "../utils/formatDateTime.js";
 
 const route = useRoute();
@@ -49,36 +51,19 @@ const {
   },
 });
 
-const transcriptionText = computed(() => {
-  const row = transcriptionRow.value;
-  if (!row?.transcription) return "";
-  return String(row.transcription).trim();
-});
+const parsedReport = computed(() =>
+  parseSavedFormattedReport(transcriptionRow.value?.formatted_transcription)
+);
 
-const formattedSections = computed(() => {
-  const raw = transcriptionRow.value?.formatted_transcription;
-  if (!raw || typeof raw !== "object") return [];
+const reportBlocks = computed(() => parsedReport.value?.blocks ?? []);
 
-  if (Array.isArray(raw)) {
-    return raw
-      .filter((item) => item && typeof item === "object")
-      .map((item) => ({
-        title: String(item.title ?? "Section"),
-        items: Array.isArray(item.items) ? item.items.map(String) : [String(item.text ?? "")],
-      }));
-  }
-
-  return Object.entries(raw).map(([title, value]) => ({
-    title,
-    items: Array.isArray(value) ? value.map(String) : [String(value)],
-  }));
-});
+const insightSections = computed(() => parsedReport.value?.insightSections ?? []);
 
 const isLoading = computed(() => reportLoading.value || transcriptionLoading.value);
 
-const exportableText = computed(() => {
+const exportNotePayload = computed(() => {
   const row = report.value;
-  if (!row) return "";
+  if (!row) return null;
 
   const caseRef = [
     `Report ID: ${row.reportId}`,
@@ -89,13 +74,27 @@ const exportableText = computed(() => {
     .filter(Boolean)
     .join(" · ");
 
-  return buildClinicalNotePlainText({
+  return {
     title: row.caseTitle,
     caseRef,
-    transcript: transcriptionText.value,
-    sections: formattedSections.value,
-  });
+    blocks: reportBlocks.value.map((block) => ({
+      heading: block.heading,
+      body: block.html,
+    })),
+    sections: insightSections.value.map((section) => ({
+      title: section.title,
+      items: section.rows.map((item) => `${item.label}: ${item.value}`),
+    })),
+  };
 });
+
+const exportableText = computed(() =>
+  exportNotePayload.value ? buildClinicalNotePlainText(exportNotePayload.value) : ""
+);
+
+const exportableHtml = computed(() =>
+  exportNotePayload.value ? buildClinicalNoteHtml(exportNotePayload.value) : ""
+);
 
 const exportDisabled = computed(
   () =>
@@ -121,7 +120,7 @@ async function handleSmartCopy() {
   actionMessage.value = "";
 
   try {
-    await copyTextToClipboard(exportableText.value);
+    await copyRichTextToClipboard(exportableHtml.value, exportableText.value);
     flashAction("Copied to clipboard.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Copy failed.");
@@ -150,14 +149,14 @@ async function handleExportPdf() {
 
 <template>
   <AdminShell
-    title="Report Transcription"
-    subtitle="Transcribed clinical observations"
+    title="Clinical Report"
+    subtitle="Generated clinical note"
     active-nav="Reports"
     search-value=""
   >
     <p v-if="!hospitalId" class="auth-form-message" role="alert">Hospital context is missing.</p>
 
-    <p v-else-if="isLoading" class="auth-form-message auth-form-message--info">Loading transcription…</p>
+    <p v-else-if="isLoading" class="auth-form-message auth-form-message--info">Loading report…</p>
 
     <p v-else-if="reportError" class="auth-form-message" role="alert">
       {{ reportLoadError?.message || "Could not load report." }}
@@ -166,13 +165,10 @@ async function handleExportPdf() {
     <template v-else-if="report">
       <section class="editor-toolbar">
         <div class="toolbar-left">
-          <button type="button" class="toolbar-btn" disabled title="Coming soon">↶</button>
-          <button type="button" class="toolbar-btn" disabled title="Coming soon">↷</button>
+          <button type="button" class="toolbar-btn" disabled title="Read only">↶</button>
+          <button type="button" class="toolbar-btn" disabled title="Read only">↷</button>
           <span class="divider"></span>
-          <span class="toolbar-label">Normal Text</span>
-          <button type="button" class="toolbar-btn" disabled title="Coming soon">B</button>
-          <button type="button" class="toolbar-btn" disabled title="Coming soon">I</button>
-          <button type="button" class="toolbar-btn" disabled title="Coming soon">U</button>
+          <span class="toolbar-label">Clinical report (read only)</span>
         </div>
         <div class="toolbar-actions">
           <p v-if="actionMessage" class="transcription-action-msg" role="status">{{ actionMessage }}</p>
@@ -203,19 +199,35 @@ async function handleExportPdf() {
           </p>
           <p v-if="report.createdAt" class="case-ref">Created {{ formatReportDate(report.createdAt) }}</p>
 
-          <template v-if="transcriptionText">
-            <h4>Transcription</h4>
-            <p class="transcription-body">{{ transcriptionText }}</p>
+          <template v-if="reportBlocks.length">
+            <section
+              v-for="(block, index) in reportBlocks"
+              :key="`${block.heading}-${index}`"
+              class="transcription-note-section"
+            >
+              <h4 class="transcription-section-heading">{{ block.heading }}</h4>
+              <div class="transcription-paragraph report-block-readonly" v-html="block.html" />
+            </section>
           </template>
           <p v-else class="auth-form-message auth-form-message--info">
-            No transcription has been saved for this report yet.
+            No formatted report content saved for this session yet.
           </p>
         </article>
 
-        <aside v-if="formattedSections.length" class="insight-stack">
-          <article v-for="section in formattedSections" :key="section.title" class="insight-card">
-            <h4>{{ section.title.toUpperCase() }}</h4>
-            <p v-for="item in section.items" :key="item">{{ item }}</p>
+        <aside v-if="insightSections.length" class="insight-panel">
+          <article v-for="section in insightSections" :key="section.title" class="insight-card">
+            <header class="insight-card-head">
+              <span class="insight-card-icon" aria-hidden="true">
+                <font-awesome-icon :icon="['fas', section.icon]" />
+              </span>
+              <h4>{{ section.title }}</h4>
+            </header>
+            <dl class="insight-rows">
+              <div v-for="row in section.rows" :key="row.label" class="insight-row">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
+              </div>
+            </dl>
           </article>
         </aside>
       </section>
@@ -224,8 +236,7 @@ async function handleExportPdf() {
 </template>
 
 <style scoped>
-.transcription-body {
-  white-space: pre-wrap;
+.report-block-readonly {
   line-height: 1.6;
 }
 

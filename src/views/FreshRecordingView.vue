@@ -21,7 +21,7 @@ function onFileSelected(ev) {
   if (!file) return;
   setRecordingSessionType("Audio Upload");
   setPendingAudioForTranscription(file);
-  router.push({ path: "/clinician/recording/transcription", query: { loading: "1" } });
+  router.push({ path: "/clinician/recording/report", query: { loading: "1" } });
 }
 </script>
 

@@ -75,6 +75,12 @@ const routes = [
         meta: { role: "clinician" },
       },
       {
+        path: "recording/report",
+        name: "clinician-report",
+        component: TranscriptionView,
+        meta: { role: "clinician" },
+      },
+      {
         path: "patients",
         redirect: { name: "clinician-patient-library" },
       },
@@ -147,6 +153,7 @@ const routes = [
   { path: "/recording/fresh", redirect: "/clinician/recording/fresh" },
   { path: "/recording/active", redirect: "/clinician/recording/active" },
   { path: "/recording/transcription", redirect: "/clinician/recording/transcription" },
+  { path: "/recording/report", redirect: "/clinician/recording/report" },
   { path: "/recording", redirect: "/clinician/recording/fresh" },
   { path: "/patients/library", redirect: "/clinician/patients/library" },
   { path: "/patients/details", redirect: "/clinician/patients/details" },

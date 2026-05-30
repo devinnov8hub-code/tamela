@@ -115,7 +115,7 @@ function closeDeleteModal() {
 
 function confirmOpenReport() {
   if (!editTarget.value) return;
-  router.push({ name: "clinician-transcription", query: { reportId: editTarget.value.id } });
+  router.push({ name: "clinician-report", query: { reportId: editTarget.value.id } });
   closeEditModal();
 }
 

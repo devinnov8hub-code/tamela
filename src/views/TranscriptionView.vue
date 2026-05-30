@@ -1,20 +1,34 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useQueryClient } from "@tanstack/vue-query";
+import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppShell from "../components/AppShell.vue";
 import { useAuth } from "../composables/useAuth.js";
-import { extractTranscriptionText, transcribeAudio } from "../services/scribeApi.js";
+import {
+  extractTranscriptionText,
+  reportFromText,
+  transcribeAudio,
+} from "../services/scribeApi.js";
 import {
   fetchReportById,
   fetchReportTranscription,
   saveReportWithTranscription,
+  updateReportContent,
 } from "../services/reportService.js";
+import { fetchSpecialtiesByHospital } from "../services/specialtyService.js";
 import {
+  buildClinicalNoteHtml,
   buildClinicalNotePlainText,
-  copyTextToClipboard,
+  copyRichTextToClipboard,
   downloadTextAsPdf,
 } from "../utils/clinicalNoteExport.js";
+import {
+  buildFormattedReportPayload,
+  criticalFieldsToInsightSections,
+  normalizeReportFromTextResponse,
+  parseSavedFormattedReport,
+  templateTextToBlocks,
+} from "../utils/reportFromTextFormat.js";
 import {
   clearPendingAudioForTranscription,
   getLastSavedReportId,
@@ -34,6 +48,7 @@ const { hospitalId, user, profile } = useAuth();
 const loadingFromQuery = computed(() => route.query.loading === "1");
 const reportIdFromRoute = computed(() => String(route.query.reportId ?? "").trim());
 const isLoading = ref(loadingFromQuery.value);
+const loadingMessage = ref("Loading clinical report…");
 const transcriptText = ref("");
 const errorText = ref("");
 const saveErrorText = ref("");
@@ -41,65 +56,42 @@ const actionMessage = ref("");
 const copyInProgress = ref(false);
 const exportInProgress = ref(false);
 const savedReport = ref(null);
+const reportMeta = ref({ caseTitle: "", sessionType: "", criticalFields: [] });
+const reportBlocks = ref([]);
+const insightSections = ref([]);
+const reportContentKey = ref(0);
+const blockEditorRefs = ref([]);
+const saveInProgress = ref(false);
 
 const last = getLastTranscription();
 if (last?.text) transcriptText.value = last.text;
 if (last?.error) errorText.value = last.error;
 
-const insightSections = [
-  {
-    title: "Clinical Impression",
-    icon: "stethoscope",
-    rows: [
-      { label: "Localized Pain Location", value: "Right Upper Quadrant" },
-      { label: "Pain Radiation Point", value: "Right Scapula" },
-    ],
+const { data: specialtiesList } = useQuery({
+  queryKey: computed(() => ["specialties", hospitalId.value]),
+  enabled: computed(() => Boolean(hospitalId.value)),
+  queryFn: async () => {
+    const { specialties, error } = await fetchSpecialtiesByHospital(hospitalId.value);
+    if (error) throw error;
+    return specialties;
   },
-  {
-    title: "Differential Diagnosis",
-    icon: "magnifying-glass",
-    rows: [
-      { label: "Vitals", value: "BP 142/88, HR 92 bpm, Temp 98.6°F, SpO2 99%" },
-      { label: "Risk Level", value: "Moderate" },
-    ],
-  },
-  {
-    title: "Diagnostic Plan",
-    icon: "clipboard-list",
-    rows: [
-      { label: "Orders", value: "Abdominal Ultrasound, CBC/LFTs" },
-      { label: "Status", value: "Pending / Urgent" },
-    ],
-  },
-];
+});
 
-const staticBlocks = [
-  {
-    heading: "Chief Complaint",
-    html:
-      'Patient presents with recurring abdominal pain localized in the <span class="transcript-highlight">right upper quadrant</span>, persisting for 3 days.',
-  },
-  {
-    heading: "History of Present Illness",
-    html:
-      '45-year-old male with a history of mild hypertension. Reports that the current episode began after a heavy dinner on Tuesday, with pain radiating to the <span class="transcript-highlight">right scapula</span>.',
-  },
-  {
-    heading: "Physical Examination",
-    html: `<ul class="transcript-list">
-<li><strong>General:</strong> Alert and oriented x3, in moderate distress due to pain.</li>
-<li><strong>Vitals:</strong> <span class="transcript-highlight">BP 142/88</span>, <span class="transcript-highlight">HR 92 bpm</span>, <span class="transcript-highlight">Temp 98.6°F</span>, <span class="transcript-highlight">SpO2 99%</span> on RA.</li>
-<li><strong>Abdomen:</strong> Positive Murphy's sign. Soft, but tender <span class="transcript-highlight">RUQ</span> on deep palpation.</li>
-</ul>`,
-  },
-  {
-    heading: "Impressions & Recommendations",
-    html:
-      'Clinical suspicion for acute cholecystitis based on <span class="transcript-highlight">RUQ</span> pain and positive Murphy\'s sign. Plan for urgent abdominal ultrasound and <span class="transcript-highlight">CBC/LFTs</span>.',
-  },
-];
+const clinicianSpecialty = computed(() => {
+  const specId = profile.value?.specialty_id;
+  if (specId) {
+    const match = (specialtiesList.value ?? []).find((s) => s.id === specId);
+    if (match?.name) return match.name;
+  }
+  return "Radiology/Ultrasound";
+});
 
-const noteTitle = computed(() => savedReport.value?.caseTitle || "Clinical Consultation Note");
+const noteTitle = computed(
+  () =>
+    savedReport.value?.caseTitle ||
+    reportMeta.value.caseTitle ||
+    "Clinical Consultation Note"
+);
 const caseRefLabel = computed(() => {
   if (savedReport.value?.reportId) {
     return `Report ID: ${savedReport.value.reportId}`;
@@ -107,25 +99,95 @@ const caseRefLabel = computed(() => {
   return "Report ID: (not saved yet)";
 });
 
-const exportableText = computed(() =>
-  buildClinicalNotePlainText({
-    title: noteTitle.value,
-    caseRef: caseRefLabel.value,
-    transcript: transcriptText.value,
-    error: errorText.value,
-    sections: insightSections.map((s) => ({
-      title: s.title,
-      items: s.rows.map((r) => `${r.label}: ${r.value}`),
-    })),
-    blocks: staticBlocks.map((b) => ({ heading: b.heading, body: b.html.replace(/<[^>]+>/g, "") })),
-  })
-);
+const exportNotePayload = computed(() => ({
+  title: noteTitle.value,
+  caseRef: caseRefLabel.value,
+  error: errorText.value,
+  blocks: reportBlocks.value.map((block) => ({
+    heading: block.heading,
+    body: block.html,
+  })),
+  sections: insightSections.value.map((section) => ({
+    title: section.title,
+    items: section.rows.map((row) => `${row.label}: ${row.value}`),
+  })),
+}));
+
+const exportableText = computed(() => buildClinicalNotePlainText(exportNotePayload.value));
+
+const exportableHtml = computed(() => buildClinicalNoteHtml(exportNotePayload.value));
+
+function applyReportResponse(normalized) {
+  reportMeta.value = {
+    caseTitle: normalized.caseTitle,
+    sessionType: normalized.sessionType,
+    criticalFields: normalized.criticalFields,
+  };
+  reportBlocks.value = templateTextToBlocks(normalized.templateText);
+  insightSections.value = criticalFieldsToInsightSections(normalized.criticalFields, []);
+  reportContentKey.value += 1;
+  blockEditorRefs.value = [];
+}
 
 function buildFormattedTranscription() {
-  return {
-    sections: insightSections,
-    blocks: staticBlocks.map((b) => ({ heading: b.heading, html: b.html })),
-  };
+  return buildFormattedReportPayload(
+    reportBlocks.value,
+    insightSections.value,
+    reportMeta.value.criticalFields
+  );
+}
+
+function setBlockEditorRef(el, index) {
+  if (!el) return;
+  blockEditorRefs.value[index] = el;
+  const block = reportBlocks.value[index];
+  if (block && el.innerHTML !== block.html) {
+    el.innerHTML = block.html;
+  }
+}
+
+watch(reportContentKey, () => {
+  nextTick(() => {
+    reportBlocks.value.forEach((block, index) => {
+      const el = blockEditorRefs.value[index];
+      if (el) el.innerHTML = block.html;
+    });
+  });
+});
+
+function syncBlockHtml(index, event) {
+  const html = event.target.innerHTML;
+  if (reportBlocks.value[index]) {
+    reportBlocks.value[index].html = html;
+  }
+}
+
+function syncAllBlocksFromEditors() {
+  blockEditorRefs.value.forEach((el, index) => {
+    if (el && reportBlocks.value[index]) {
+      reportBlocks.value[index].html = el.innerHTML;
+    }
+  });
+}
+
+function focusEditorSelection() {
+  const active = document.activeElement;
+  if (active?.isContentEditable) return active;
+  const first = blockEditorRefs.value.find((el) => el);
+  first?.focus();
+  return first ?? null;
+}
+
+function applyFormat(command, value = null) {
+  focusEditorSelection();
+  document.execCommand(command, false, value);
+  syncAllBlocksFromEditors();
+}
+
+function applyBlockFormat(tag) {
+  focusEditorSelection();
+  document.execCommand("formatBlock", false, tag);
+  syncAllBlocksFromEditors();
 }
 
 async function invalidateReportQueries() {
@@ -141,7 +203,7 @@ async function invalidateReportQueries() {
   ]);
 }
 
-async function persistTranscription(text) {
+async function persistTranscription(text, caseTitle) {
   saveErrorText.value = "";
 
   const hid = hospitalId.value;
@@ -157,12 +219,14 @@ async function persistTranscription(text) {
     departmentId: profile.value?.department_id ?? null,
     transcription: text,
     formattedTranscription: buildFormattedTranscription(),
-    sessionType: getRecordingSessionType(),
+    sessionType:
+      reportMeta.value.sessionType?.trim() || getRecordingSessionType(),
+    caseTitle: caseTitle || reportMeta.value.caseTitle || undefined,
   });
 
   if (error) {
     saveErrorText.value =
-      error.message || "Transcription completed but could not be saved to the database.";
+      error.message || "Report generated but could not be saved to the database.";
     return;
   }
 
@@ -171,11 +235,37 @@ async function persistTranscription(text) {
   await invalidateReportQueries();
 }
 
+function hydrateSavedFormattedReport(formatted) {
+  const parsed = parseSavedFormattedReport(formatted);
+  if (!parsed) return false;
+
+  reportBlocks.value = parsed.blocks;
+  insightSections.value = parsed.insightSections;
+  reportMeta.value.criticalFields = parsed.criticalFields;
+  reportContentKey.value += 1;
+  blockEditorRefs.value = [];
+  return true;
+}
+
+async function generateReportFromTranscript(text) {
+  loadingMessage.value = "Generating clinical report…";
+  const reportData = await reportFromText(text, { specialty: clinicianSpecialty.value });
+  const normalized = normalizeReportFromTextResponse(reportData);
+  applyReportResponse(normalized);
+
+  if (!reportBlocks.value.length) {
+    throw new Error("Report was generated but returned no note content.");
+  }
+
+  return normalized;
+}
+
 async function loadSavedReport(reportUuid) {
   const hid = hospitalId.value;
   if (!hid || !reportUuid) return;
 
   isLoading.value = true;
+  loadingMessage.value = "Loading clinical report…";
   errorText.value = "";
   saveErrorText.value = "";
 
@@ -199,14 +289,34 @@ async function loadSavedReport(reportUuid) {
       reportId: report.reportId,
       caseTitle: report.caseTitle,
     };
+    reportMeta.value.caseTitle = report.caseTitle || reportMeta.value.caseTitle;
+    reportMeta.value.sessionType = report.sessionType || reportMeta.value.sessionType;
     setLastSavedReportId(report.id);
 
     if (transcription?.transcription) {
       transcriptText.value = String(transcription.transcription).trim();
-    } else {
-      transcriptText.value = "";
-      errorText.value = "No transcription saved for this report yet.";
     }
+
+    const loaded = hydrateSavedFormattedReport(transcription?.formatted_transcription);
+    if (loaded) return;
+
+    if (transcriptText.value) {
+      const normalized = await generateReportFromTranscript(transcriptText.value);
+      const uid = user.value?.id;
+      if (savedReport.value?.id && uid) {
+        await updateReportContent({
+          hospitalId: hid,
+          reportId: savedReport.value.id,
+          clinicianId: uid,
+          formattedTranscription: buildFormattedTranscription(),
+          caseTitle: normalized.caseTitle || savedReport.value.caseTitle,
+          sessionType: normalized.sessionType || reportMeta.value.sessionType,
+        });
+      }
+      return;
+    }
+
+    errorText.value = "No report content saved for this session yet.";
   } catch (error) {
     errorText.value = error instanceof Error ? error.message : "Could not load report.";
   } finally {
@@ -219,7 +329,17 @@ const exportDisabled = computed(
     isLoading.value ||
     copyInProgress.value ||
     exportInProgress.value ||
+    saveInProgress.value ||
+    Boolean(errorText.value) ||
     !exportableText.value.trim()
+);
+
+const canSaveReport = computed(
+  () =>
+    Boolean(savedReport.value?.id) &&
+    reportBlocks.value.length > 0 &&
+    !isLoading.value &&
+    !errorText.value
 );
 
 function flashAction(message) {
@@ -234,11 +354,12 @@ function flashAction(message) {
 async function handleSmartCopy() {
   if (exportDisabled.value) return;
 
+  syncAllBlocksFromEditors();
   copyInProgress.value = true;
   actionMessage.value = "";
 
   try {
-    await copyTextToClipboard(exportableText.value);
+    await copyRichTextToClipboard(exportableHtml.value, exportableText.value);
     flashAction("Copied to clipboard.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Copy failed.");
@@ -250,6 +371,7 @@ async function handleSmartCopy() {
 async function handleExportPdf() {
   if (exportDisabled.value) return;
 
+  syncAllBlocksFromEditors();
   exportInProgress.value = true;
   actionMessage.value = "";
 
@@ -264,19 +386,77 @@ async function handleExportPdf() {
   }
 }
 
+async function handleSaveReport() {
+  if (!canSaveReport.value || saveInProgress.value) return;
+
+  const hid = hospitalId.value;
+  const uid = user.value?.id;
+  const reportId = savedReport.value?.id;
+  if (!hid || !uid || !reportId) return;
+
+  syncAllBlocksFromEditors();
+  saveInProgress.value = true;
+  saveErrorText.value = "";
+  actionMessage.value = "";
+
+  try {
+    const { report, error } = await updateReportContent({
+      hospitalId: hid,
+      reportId,
+      clinicianId: uid,
+      formattedTranscription: buildFormattedTranscription(),
+      caseTitle: noteTitle.value,
+      sessionType: reportMeta.value.sessionType || getRecordingSessionType(),
+    });
+
+    if (error) {
+      saveErrorText.value = error.message || "Could not save report changes.";
+      return;
+    }
+
+    if (report) {
+      savedReport.value = report;
+      reportMeta.value.caseTitle = report.caseTitle || reportMeta.value.caseTitle;
+    }
+
+    await invalidateReportQueries();
+    flashAction("Report saved.");
+  } catch (error) {
+    saveErrorText.value = error instanceof Error ? error.message : "Could not save report.";
+  } finally {
+    saveInProgress.value = false;
+  }
+}
+
+async function resumeReportFromTranscript() {
+  if (!transcriptText.value?.trim() || reportBlocks.value.length) return;
+
+  isLoading.value = true;
+  errorText.value = "";
+  try {
+    await generateReportFromTranscript(transcriptText.value);
+  } catch (error) {
+    errorText.value = error instanceof Error ? error.message : "Could not generate report.";
+  } finally {
+    isLoading.value = false;
+  }
+}
+
 async function loadTranscription() {
   const existingReportId = reportIdFromRoute.value || getLastSavedReportId();
   if (!loadingFromQuery.value) {
     if (existingReportId) {
       await loadSavedReport(existingReportId);
+      return;
     }
+    await resumeReportFromTranscript();
     return;
   }
 
   const pendingAudio = takePendingAudioForTranscription();
   if (!pendingAudio) {
     isLoading.value = false;
-    if (!transcriptText.value) {
+    if (!reportBlocks.value.length && !transcriptText.value) {
       errorText.value = "No recorded audio found. Please record again.";
       setLastTranscriptionError(errorText.value);
     }
@@ -288,24 +468,35 @@ async function loadTranscription() {
     errorText.value = "";
     saveErrorText.value = "";
 
+    loadingMessage.value = "Transcribing audio…";
     const data = await transcribeAudio(pendingAudio);
     const text = extractTranscriptionText(data);
-    const normalized = text?.trim() || "";
-    transcriptText.value = normalized || "Transcription succeeded but returned empty text.";
+    const normalizedTranscript = text?.trim() || "";
+    transcriptText.value = normalizedTranscript;
     setLastTranscription(transcriptText.value, data);
 
-    if (normalized) {
-      await persistTranscription(normalized);
+    if (!normalizedTranscript) {
+      errorText.value = "Transcription succeeded but returned empty text.";
+      setLastTranscriptionError(errorText.value);
+      return;
     }
+
+    const generated = await generateReportFromTranscript(normalizedTranscript);
+    await persistTranscription(
+      normalizedTranscript,
+      generated.caseTitle || undefined
+    );
   } catch (error) {
+    reportBlocks.value = [];
+    insightSections.value = [];
     transcriptText.value = "";
-    errorText.value = error instanceof Error ? error.message : "Transcription failed.";
+    errorText.value = error instanceof Error ? error.message : "Could not generate report.";
     setLastTranscriptionError(errorText.value);
   } finally {
     isLoading.value = false;
     clearPendingAudioForTranscription();
     const nextQuery = savedReport.value?.id ? { reportId: savedReport.value.id } : {};
-    router.replace({ path: "/clinician/recording/transcription", query: nextQuery });
+    router.replace({ path: "/clinician/recording/report", query: nextQuery });
   }
 }
 
@@ -314,56 +505,138 @@ onMounted(loadTranscription);
 
 <template>
   <AppShell
-    title="Report Transcription"
-    subtitle="Transcribed clinical observations"
+    title="Clinical Report"
+    subtitle="Review and edit your generated note"
     active-nav="Active Recording"
     search-placeholder="Search"
     wide-search
   >
     <section class="transcription-toolbar editor-toolbar">
       <div class="toolbar-left">
-        <button type="button" class="toolbar-btn" disabled title="Undo (coming soon)" aria-label="Undo">
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Undo"
+          aria-label="Undo"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('undo')"
+        >
           <font-awesome-icon :icon="['fas', 'rotate-left']" />
         </button>
-        <button type="button" class="toolbar-btn" disabled title="Redo (coming soon)" aria-label="Redo">
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Redo"
+          aria-label="Redo"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('redo')"
+        >
           <font-awesome-icon :icon="['fas', 'rotate-right']" />
         </button>
         <span class="divider" />
         <label class="toolbar-select-wrap">
           <span class="sr-only">Text style</span>
-          <select class="toolbar-select" disabled>
-            <option>Normal Text</option>
+          <select
+            class="toolbar-select"
+            :disabled="isLoading || Boolean(errorText)"
+            @change="applyBlockFormat($event.target.value)"
+          >
+            <option value="p">Normal Text</option>
+            <option value="h3">Heading</option>
+            <option value="h4">Subheading</option>
           </select>
         </label>
         <span class="divider" />
-        <button type="button" class="toolbar-btn" disabled title="Bold (coming soon)"><strong>B</strong></button>
-        <button type="button" class="toolbar-btn" disabled title="Italic (coming soon)"><em>I</em></button>
-        <button type="button" class="toolbar-btn" disabled title="Underline (coming soon)"><u>U</u></button>
-        <button type="button" class="toolbar-btn" disabled title="Text color (coming soon)" aria-label="Text color">
-          <span class="toolbar-color-a">A</span>
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Bold"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('bold')"
+        >
+          <strong>B</strong>
         </button>
-        <button type="button" class="toolbar-btn" disabled title="Highlight (coming soon)" aria-label="Highlight">
-          <font-awesome-icon :icon="['fas', 'highlighter']" />
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Italic"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('italic')"
+        >
+          <em>I</em>
+        </button>
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Underline"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('underline')"
+        >
+          <u>U</u>
         </button>
         <span class="divider" />
-        <button type="button" class="toolbar-btn" disabled title="Align left (coming soon)" aria-label="Align left">
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Align left"
+          aria-label="Align left"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('justifyLeft')"
+        >
           <font-awesome-icon :icon="['fas', 'align-left']" />
         </button>
-        <button type="button" class="toolbar-btn" disabled title="Align center (coming soon)" aria-label="Align center">
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Align center"
+          aria-label="Align center"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('justifyCenter')"
+        >
           <font-awesome-icon :icon="['fas', 'align-center']" />
         </button>
-        <button type="button" class="toolbar-btn" disabled title="Align right (coming soon)" aria-label="Align right">
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Align right"
+          aria-label="Align right"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('justifyRight')"
+        >
           <font-awesome-icon :icon="['fas', 'align-right']" />
         </button>
-        <button type="button" class="toolbar-btn" disabled title="Justify (coming soon)" aria-label="Justify">
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Justify"
+          aria-label="Justify"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('justifyFull')"
+        >
           <font-awesome-icon :icon="['fas', 'align-justify']" />
         </button>
-        <button type="button" class="toolbar-btn" disabled title="Link (coming soon)" aria-label="Insert link">
-          <font-awesome-icon :icon="['fas', 'link']" />
+        <button
+          type="button"
+          class="toolbar-btn"
+          title="Bulleted list"
+          aria-label="Bulleted list"
+          :disabled="isLoading || Boolean(errorText)"
+          @click="applyFormat('insertUnorderedList')"
+        >
+          <font-awesome-icon :icon="['fas', 'list-ul']" />
         </button>
       </div>
       <div class="toolbar-actions transcription-toolbar-actions">
         <p v-if="actionMessage" class="transcription-action-msg" role="status">{{ actionMessage }}</p>
+        <button
+          v-if="canSaveReport"
+          type="button"
+          class="secondary-btn small"
+          :disabled="saveInProgress || isLoading || Boolean(errorText)"
+          @click="handleSaveReport"
+        >
+          {{ saveInProgress ? "Saving…" : "Save Report" }}
+        </button>
         <button
           type="button"
           class="transcription-btn-copy"
@@ -388,7 +661,7 @@ onMounted(loadTranscription);
     <section class="transcription-layout">
       <article class="note-card transcription-note-card">
         <template v-if="isLoading">
-          <h3 class="loading-title">Report Transcription Loading...</h3>
+          <h3 class="loading-title">{{ loadingMessage }}</h3>
           <div class="skeleton-line short" />
           <div class="skeleton-line" />
           <div class="skeleton-line medium" />
@@ -402,31 +675,36 @@ onMounted(loadTranscription);
           <p v-if="saveErrorText" class="save-error" role="alert">{{ saveErrorText }}</p>
 
           <template v-if="errorText">
-            <h4 class="transcription-section-heading">Transcription Error</h4>
+            <h4 class="transcription-section-heading">Report Error</h4>
             <p class="transcription-paragraph">{{ errorText }}</p>
           </template>
-          <template v-else-if="transcriptText">
-            <h4 class="transcription-section-heading">Transcript</h4>
-            <p class="transcription-paragraph transcript-body">{{ transcriptText }}</p>
+          <template v-else-if="reportBlocks.length">
+            <section
+              v-for="(block, index) in reportBlocks"
+              :key="`${reportContentKey}-${index}`"
+              class="transcription-note-section"
+            >
+              <h4 class="transcription-section-heading">{{ block.heading }}</h4>
+              <div
+                :ref="(el) => setBlockEditorRef(el, index)"
+                class="transcription-paragraph report-block-editor"
+                contenteditable="true"
+                spellcheck="true"
+                role="textbox"
+                aria-multiline="true"
+                :aria-label="`${block.heading} content`"
+                @input="syncBlockHtml(index, $event)"
+                @blur="syncBlockHtml(index, $event)"
+              />
+            </section>
           </template>
           <template v-else>
-            <h4 class="transcription-section-heading">Transcript</h4>
-            <p class="transcription-paragraph">No transcript available yet.</p>
+            <p class="transcription-paragraph">No report content available yet.</p>
           </template>
-
-          <section
-            v-for="block in staticBlocks"
-            :key="block.heading"
-            class="transcription-note-section"
-          >
-            <h4 class="transcription-section-heading">{{ block.heading }}</h4>
-            <!-- eslint-disable-next-line vue/no-v-html -->
-            <div class="transcription-paragraph" v-html="block.html" />
-          </section>
         </template>
       </article>
 
-      <aside v-if="!isLoading" class="insight-panel">
+      <aside v-if="!isLoading && insightSections.length" class="insight-panel">
         <article v-for="section in insightSections" :key="section.title" class="insight-card">
           <header class="insight-card-head">
             <span class="insight-card-icon" aria-hidden="true">
@@ -459,8 +737,15 @@ onMounted(loadTranscription);
   border: 0;
 }
 
-.transcript-body {
-  white-space: pre-wrap;
+.report-block-editor {
+  min-height: 48px;
+  outline: none;
+  cursor: text;
+}
+
+.report-block-editor:focus {
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.18);
+  border-radius: 8px;
 }
 
 .save-error {
@@ -481,5 +766,11 @@ onMounted(loadTranscription);
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.toolbar-btn:disabled,
+.toolbar-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>
