@@ -135,6 +135,153 @@ function copyRichTextWithSelection(html) {
 }
 
 /**
+ * @returns {Promise<(options: object) => { from: (el: HTMLElement) => { save: () => Promise<void> } }>}
+ */
+async function loadHtml2Pdf() {
+  if (typeof window === "undefined") {
+    throw new Error("PDF export is only available in the browser.");
+  }
+
+  if (window.html2pdf) {
+    return window.html2pdf;
+  }
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-tamela-html2pdf="1"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.html2pdf));
+      existing.addEventListener("error", () => reject(new Error("Could not load PDF library.")));
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js";
+    script.async = true;
+    script.dataset.tamelaHtml2pdf = "1";
+    script.onload = () => {
+      if (window.html2pdf) {
+        resolve(window.html2pdf);
+      } else {
+        reject(new Error("PDF library loaded but is unavailable."));
+      }
+    };
+    script.onerror = () => reject(new Error("Could not load PDF library. Check your network."));
+    document.head.appendChild(script);
+  });
+}
+
+const PDF_NOTE_STYLES = `
+  .tamela-pdf-note {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #1e293b;
+  }
+  .tamela-pdf-note h2 {
+    font-size: 18pt;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: #0f172a;
+  }
+  .tamela-pdf-note h3,
+  .tamela-pdf-note h4 {
+    font-size: 13pt;
+    font-weight: 700;
+    margin: 16px 0 6px;
+    color: #0f172a;
+  }
+  .tamela-pdf-note h4 {
+    font-size: 12pt;
+  }
+  .tamela-pdf-note p {
+    margin: 0 0 8px;
+  }
+  .tamela-pdf-note ul,
+  .tamela-pdf-note ol {
+    margin: 0 0 10px 20px;
+    padding: 0;
+  }
+  .tamela-pdf-note li {
+    margin-bottom: 4px;
+  }
+  .tamela-pdf-note strong,
+  .tamela-pdf-note b {
+    font-weight: 700;
+  }
+  .tamela-pdf-note em,
+  .tamela-pdf-note i {
+    font-style: italic;
+  }
+  .tamela-pdf-note u {
+    text-decoration: underline;
+  }
+  .tamela-pdf-note .transcript-highlight {
+    font-weight: 600;
+    color: #1d4ed8;
+  }
+`;
+
+/**
+ * @param {string} html
+ * @returns {HTMLDivElement}
+ */
+function buildPdfRenderContainer(html) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "tamela-pdf-note";
+  wrapper.style.width = "180mm";
+  wrapper.style.boxSizing = "border-box";
+  wrapper.innerHTML = html.startsWith("<") ? html : `<p>${escapeHtml(html)}</p>`;
+
+  const root = document.createElement("div");
+  const style = document.createElement("style");
+  style.textContent = PDF_NOTE_STYLES;
+  root.appendChild(style);
+  root.appendChild(wrapper);
+  return root;
+}
+
+/**
+ * Export formatted HTML as PDF (preserves bold, lists, headings, etc.).
+ * @param {string} html
+ * @param {string} [filename]
+ * @param {string} [plainFallback]
+ */
+export async function downloadHtmlAsPdf(html, filename = "clinical-note.pdf", plainFallback) {
+  const htmlContent = html?.trim();
+  if (!htmlContent) {
+    if (plainFallback?.trim()) {
+      return downloadTextAsPdf(plainFallback, filename);
+    }
+    throw new Error("Nothing to export yet.");
+  }
+
+  const html2pdf = await loadHtml2Pdf();
+  const container = buildPdfRenderContainer(htmlContent);
+  container.style.position = "fixed";
+  container.style.left = "-10000px";
+  container.style.top = "0";
+  document.body.appendChild(container);
+
+  const safeName = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+
+  try {
+    await html2pdf()
+      .set({
+        margin: [14, 14, 14, 14],
+        filename: safeName,
+        pagebreak: { mode: ["css", "legacy"] },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      })
+      .from(container)
+      .save();
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
+/**
+ * Plain-text PDF export (fallback when HTML is unavailable).
  * @param {string} text
  * @param {string} [filename]
  */

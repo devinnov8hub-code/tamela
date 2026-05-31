@@ -84,9 +84,23 @@ a {
   margin-top: auto;
   border-top: 1px solid #e5e7eb;
   padding-top: 14px;
+  padding-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.clinician-user-card:hover,
+.clinician-user-card.active {
+  background: #f3f4f6;
 }
 
 .clinician-user-card-text {

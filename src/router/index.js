@@ -9,6 +9,7 @@ const ActiveRecordingView = () => import("../views/ActiveRecordingView.vue");
 const TranscriptionView = () => import("../views/TranscriptionView.vue");
 const PatientLibraryView = () => import("../views/PatientLibraryView.vue");
 const PatientDetailView = () => import("../views/PatientDetailView.vue");
+const ClinicianProfileView = () => import("../views/ClinicianProfileView.vue");
 const AdminDashboardView = () => import("../views/AdminDashboardView.vue");
 const AdminUserManagementView = () => import("../views/AdminUserManagementView.vue");
 const AdminClinicianDetailView = () => import("../views/AdminClinicianDetailView.vue");
@@ -94,6 +95,12 @@ const routes = [
         path: "patients/details",
         name: "clinician-patient-details",
         component: PatientDetailView,
+        meta: { role: "clinician" },
+      },
+      {
+        path: "profile",
+        name: "clinician-profile",
+        component: ClinicianProfileView,
         meta: { role: "clinician" },
       },
     ],

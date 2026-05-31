@@ -9,7 +9,7 @@ import {
   buildClinicalNoteHtml,
   buildClinicalNotePlainText,
   copyRichTextToClipboard,
-  downloadTextAsPdf,
+  downloadHtmlAsPdf,
 } from "../utils/clinicalNoteExport.js";
 import { parseSavedFormattedReport } from "../utils/reportFromTextFormat.js";
 import { formatReportDate } from "../utils/formatDateTime.js";
@@ -137,7 +137,7 @@ async function handleExportPdf() {
 
   try {
     const id = report.value?.reportId?.replace(/[^\w-]+/g, "-") || "report";
-    await downloadTextAsPdf(exportableText.value, `${id}.pdf`);
+    await downloadHtmlAsPdf(exportableHtml.value, `${id}.pdf`, exportableText.value);
     flashAction("PDF download started.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Export failed.");

@@ -20,7 +20,7 @@ import {
   buildClinicalNoteHtml,
   buildClinicalNotePlainText,
   copyRichTextToClipboard,
-  downloadTextAsPdf,
+  downloadHtmlAsPdf,
 } from "../utils/clinicalNoteExport.js";
 import {
   buildFormattedReportPayload,
@@ -61,6 +61,8 @@ const reportBlocks = ref([]);
 const insightSections = ref([]);
 const reportContentKey = ref(0);
 const blockEditorRefs = ref([]);
+const savedSnapshot = ref("");
+const isDirty = ref(false);
 const saveInProgress = ref(false);
 
 const last = getLastTranscription();
@@ -137,6 +139,24 @@ function buildFormattedTranscription() {
   );
 }
 
+function serializeReportState() {
+  syncAllBlocksFromEditors();
+  return JSON.stringify(buildFormattedTranscription());
+}
+
+function markReportSaved() {
+  savedSnapshot.value = serializeReportState();
+  isDirty.value = false;
+}
+
+function updateDirtyState() {
+  if (!savedReport.value?.id || !savedSnapshot.value) {
+    isDirty.value = false;
+    return;
+  }
+  isDirty.value = serializeReportState() !== savedSnapshot.value;
+}
+
 function setBlockEditorRef(el, index) {
   if (!el) return;
   blockEditorRefs.value[index] = el;
@@ -160,6 +180,7 @@ function syncBlockHtml(index, event) {
   if (reportBlocks.value[index]) {
     reportBlocks.value[index].html = html;
   }
+  updateDirtyState();
 }
 
 function syncAllBlocksFromEditors() {
@@ -182,12 +203,14 @@ function applyFormat(command, value = null) {
   focusEditorSelection();
   document.execCommand(command, false, value);
   syncAllBlocksFromEditors();
+  updateDirtyState();
 }
 
 function applyBlockFormat(tag) {
   focusEditorSelection();
   document.execCommand("formatBlock", false, tag);
   syncAllBlocksFromEditors();
+  updateDirtyState();
 }
 
 async function invalidateReportQueries() {
@@ -233,6 +256,8 @@ async function persistTranscription(text, caseTitle) {
   savedReport.value = report;
   setLastSavedReportId(report.id);
   await invalidateReportQueries();
+  await nextTick();
+  markReportSaved();
 }
 
 function hydrateSavedFormattedReport(formatted) {
@@ -298,7 +323,11 @@ async function loadSavedReport(reportUuid) {
     }
 
     const loaded = hydrateSavedFormattedReport(transcription?.formatted_transcription);
-    if (loaded) return;
+    if (loaded) {
+      await nextTick();
+      markReportSaved();
+      return;
+    }
 
     if (transcriptText.value) {
       const normalized = await generateReportFromTranscript(transcriptText.value);
@@ -312,6 +341,8 @@ async function loadSavedReport(reportUuid) {
           caseTitle: normalized.caseTitle || savedReport.value.caseTitle,
           sessionType: normalized.sessionType || reportMeta.value.sessionType,
         });
+        await nextTick();
+        markReportSaved();
       }
       return;
     }
@@ -324,6 +355,15 @@ async function loadSavedReport(reportUuid) {
   }
 }
 
+const canSaveChanges = computed(
+  () =>
+    Boolean(savedReport.value?.id) &&
+    isDirty.value &&
+    !isLoading.value &&
+    !errorText.value &&
+    reportBlocks.value.length > 0
+);
+
 const exportDisabled = computed(
   () =>
     isLoading.value ||
@@ -332,14 +372,6 @@ const exportDisabled = computed(
     saveInProgress.value ||
     Boolean(errorText.value) ||
     !exportableText.value.trim()
-);
-
-const canSaveReport = computed(
-  () =>
-    Boolean(savedReport.value?.id) &&
-    reportBlocks.value.length > 0 &&
-    !isLoading.value &&
-    !errorText.value
 );
 
 function flashAction(message) {
@@ -377,7 +409,11 @@ async function handleExportPdf() {
 
   try {
     const stamp = new Date().toISOString().slice(0, 10);
-    await downloadTextAsPdf(exportableText.value, `clinical-note-${stamp}.pdf`);
+    await downloadHtmlAsPdf(
+      exportableHtml.value,
+      `clinical-note-${stamp}.pdf`,
+      exportableText.value
+    );
     flashAction("PDF download started.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Export failed.");
@@ -386,8 +422,8 @@ async function handleExportPdf() {
   }
 }
 
-async function handleSaveReport() {
-  if (!canSaveReport.value || saveInProgress.value) return;
+async function handleSaveChanges() {
+  if (!canSaveChanges.value || saveInProgress.value) return;
 
   const hid = hospitalId.value;
   const uid = user.value?.id;
@@ -410,7 +446,7 @@ async function handleSaveReport() {
     });
 
     if (error) {
-      saveErrorText.value = error.message || "Could not save report changes.";
+      saveErrorText.value = error.message || "Could not save changes.";
       return;
     }
 
@@ -420,9 +456,10 @@ async function handleSaveReport() {
     }
 
     await invalidateReportQueries();
-    flashAction("Report saved.");
+    markReportSaved();
+    flashAction("Changes saved.");
   } catch (error) {
-    saveErrorText.value = error instanceof Error ? error.message : "Could not save report.";
+    saveErrorText.value = error instanceof Error ? error.message : "Could not save changes.";
   } finally {
     saveInProgress.value = false;
   }
@@ -627,15 +664,18 @@ onMounted(loadTranscription);
         </button>
       </div>
       <div class="toolbar-actions transcription-toolbar-actions">
+        <p v-if="isDirty && !isLoading" class="transcription-unsaved-hint" role="status">
+          Unsaved changes
+        </p>
         <p v-if="actionMessage" class="transcription-action-msg" role="status">{{ actionMessage }}</p>
         <button
-          v-if="canSaveReport"
+          v-if="canSaveChanges"
           type="button"
-          class="secondary-btn small"
-          :disabled="saveInProgress || isLoading || Boolean(errorText)"
-          @click="handleSaveReport"
+          class="secondary-btn small transcription-btn-save"
+          :disabled="saveInProgress"
+          @click="handleSaveChanges"
         >
-          {{ saveInProgress ? "Saving…" : "Save Report" }}
+          {{ saveInProgress ? "Saving…" : "Save changes" }}
         </button>
         <button
           type="button"
@@ -752,6 +792,13 @@ onMounted(loadTranscription);
   color: #b42318;
   font-size: 0.9rem;
   margin: 0 0 12px;
+}
+
+.transcription-unsaved-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #b45309;
+  font-weight: 600;
 }
 
 .transcription-action-msg {

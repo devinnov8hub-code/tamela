@@ -72,13 +72,18 @@ function navigate(item) {
         </button>
       </nav>
 
-      <div class="clinician-user-card">
+      <button
+        type="button"
+        class="clinician-user-card"
+        :class="{ active: activeNav === 'Profile' }"
+        @click="router.push({ name: 'clinician-profile' })"
+      >
         <span class="clinician-user-avatar"><font-awesome-icon :icon="['fas', 'user']" /></span>
         <div class="clinician-user-card-text">
           <p>{{ displayName }}</p>
           <small>{{ roleSubtitle }}</small>
         </div>
-      </div>
+      </button>
     </aside>
 
     <main class="content-area">
