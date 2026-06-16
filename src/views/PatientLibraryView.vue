@@ -7,7 +7,9 @@ import { useAuth } from "../composables/useAuth.js";
 import {
   deleteReportById,
   fetchReportsForClinician,
+  formatSupabaseError,
 } from "../services/reportService.js";
+import { getLastSavedReportId, setLastSavedReportId } from "../session/scribeSession.js";
 import { formatClinicianReportTimestamp } from "../utils/formatDateTime.js";
 
 const router = useRouter();
@@ -129,18 +131,31 @@ async function confirmDeleteReport() {
   deleteError.value = "";
 
   try {
-    const { error } = await deleteReportById(hid, target.id, uid);
-    if (error) throw error;
+    const result = await deleteReportById(hid, target.id, uid);
+    if (result.error) {
+      deleteError.value = formatSupabaseError(result.error);
+      return;
+    }
 
-    await queryClient.invalidateQueries({
-      queryKey: ["clinician-library-reports", hid, uid],
-    });
-    await queryClient.invalidateQueries({
-      queryKey: ["clinician-dashboard-reports", hid, uid],
-    });
+    if (getLastSavedReportId() === target.id) {
+      setLastSavedReportId("");
+    }
+
+    queryClient.setQueryData(
+      ["clinician-library-reports", hid, uid],
+      (current) => (Array.isArray(current) ? current.filter((row) => row.id !== target.id) : current)
+    );
+
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ["clinician-library-reports", hid, uid] }),
+      queryClient.refetchQueries({ queryKey: ["clinician-dashboard-reports", hid, uid] }),
+      queryClient.invalidateQueries({ queryKey: ["admin-reports", hid] }),
+      queryClient.invalidateQueries({ queryKey: ["clinician-reports", hid, uid] }),
+    ]);
+
     closeDeleteModal();
   } catch (err) {
-    deleteError.value = err instanceof Error ? err.message : "Could not delete report.";
+    deleteError.value = formatSupabaseError(err);
   } finally {
     deleteInProgress.value = false;
   }

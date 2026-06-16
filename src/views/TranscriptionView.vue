@@ -64,6 +64,7 @@ const blockEditorRefs = ref([]);
 const savedSnapshot = ref("");
 const isDirty = ref(false);
 const saveInProgress = ref(false);
+const autoSaveInProgress = ref(false);
 
 const last = getLastTranscription();
 if (last?.text) transcriptText.value = last.text;
@@ -258,6 +259,30 @@ async function persistTranscription(text, caseTitle) {
   await invalidateReportQueries();
   await nextTick();
   markReportSaved();
+}
+
+function revealGeneratedReport() {
+  isLoading.value = false;
+  clearPendingAudioForTranscription();
+  router.replace({ path: "/clinician/recording/report", query: {} });
+}
+
+function startPersistTranscriptionInBackground(text, caseTitle) {
+  void (async () => {
+    autoSaveInProgress.value = true;
+    saveErrorText.value = "";
+    try {
+      await persistTranscription(text, caseTitle);
+      if (savedReport.value?.id) {
+        router.replace({
+          path: "/clinician/recording/report",
+          query: { reportId: savedReport.value.id },
+        });
+      }
+    } finally {
+      autoSaveInProgress.value = false;
+    }
+  })();
 }
 
 function hydrateSavedFormattedReport(formatted) {
@@ -519,7 +544,8 @@ async function loadTranscription() {
     }
 
     const generated = await generateReportFromTranscript(normalizedTranscript);
-    await persistTranscription(
+    revealGeneratedReport();
+    startPersistTranscriptionInBackground(
       normalizedTranscript,
       generated.caseTitle || undefined
     );
@@ -530,10 +556,12 @@ async function loadTranscription() {
     errorText.value = error instanceof Error ? error.message : "Could not generate report.";
     setLastTranscriptionError(errorText.value);
   } finally {
-    isLoading.value = false;
-    clearPendingAudioForTranscription();
-    const nextQuery = savedReport.value?.id ? { reportId: savedReport.value.id } : {};
-    router.replace({ path: "/clinician/recording/report", query: nextQuery });
+    if (isLoading.value) {
+      isLoading.value = false;
+      clearPendingAudioForTranscription();
+      const nextQuery = savedReport.value?.id ? { reportId: savedReport.value.id } : {};
+      router.replace({ path: "/clinician/recording/report", query: nextQuery });
+    }
   }
 }
 
@@ -712,6 +740,13 @@ onMounted(loadTranscription);
         <template v-else>
           <h2 class="transcription-note-title">{{ noteTitle }}</h2>
           <p class="case-ref">{{ caseRefLabel }}</p>
+          <p
+            v-if="autoSaveInProgress"
+            class="auth-form-message auth-form-message--info"
+            role="status"
+          >
+            Saving report…
+          </p>
           <p v-if="saveErrorText" class="save-error" role="alert">{{ saveErrorText }}</p>
 
           <template v-if="errorText">

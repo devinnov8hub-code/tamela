@@ -294,7 +294,10 @@ async function toggleSuspend() {
   try {
     const nextStatus =
       clinician.value.status === "active" ? USER_STATUS_SUSPENDED : USER_STATUS_ACTIVE;
-    const result = await setClinicianStatus(clinician.value.id, nextStatus);
+    const result = await setClinicianStatus(clinician.value.id, nextStatus, {
+      hospitalId: hospitalId.value,
+      updatedBy: authUser.value?.id,
+    });
     if (!result.ok) {
       window.alert(result.error || "Could not update profile status.");
       return;

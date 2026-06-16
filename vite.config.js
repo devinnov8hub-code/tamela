@@ -8,6 +8,7 @@ export default defineConfig({
       "/scribe-api": {
         target: "https://js24tdd3kz.eu-west-1.awsapprunner.com",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/scribe-api/, ""),
       },
     },

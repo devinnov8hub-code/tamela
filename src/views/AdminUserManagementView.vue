@@ -7,7 +7,7 @@ import { useAuth } from "../composables/useAuth.js";
 import { fetchDepartmentsByHospital } from "../services/departmentService.js";
 import { fetchCliniciansByHospital, inviteClinician, setClinicianStatus } from "../services/clinicianService.js";
 import { fetchSpecialtiesByHospital, findOrCreateSpecialty } from "../services/specialtyService.js";
-import { USER_STATUS_ACTIVE } from "../constants/userStatus.js";
+import { USER_STATUS_ACTIVE, USER_STATUS_SUSPENDED } from "../constants/userStatus.js";
 
 const router = useRouter();
 const queryClient = useQueryClient();
@@ -18,6 +18,7 @@ const showAddModal = ref(false);
 const passwordVisible = ref(false);
 const formError = ref("");
 const submitting = ref(false);
+const statusUpdatingId = ref("");
 
 const newUser = reactive({
   firstName: "",
@@ -98,13 +99,32 @@ function displayStatus(status) {
 }
 
 async function toggleUserStatus(clinician) {
-  const nextStatus = clinician.status === "active" ? USER_STATUS_SUSPENDED : USER_STATUS_ACTIVE;
-  const result = await setClinicianStatus(clinician.id, nextStatus);
-  if (!result.ok) {
-    window.alert(result.error || "Could not update user status.");
+  if (!hospitalId.value || !authUser.value?.id) {
+    window.alert("Hospital context is missing. Sign in again as an administrator.");
     return;
   }
-  await refetchClinicians();
+
+  const nextStatus = clinician.status === "active" ? USER_STATUS_SUSPENDED : USER_STATUS_ACTIVE;
+  statusUpdatingId.value = clinician.id;
+
+  try {
+    const result = await setClinicianStatus(clinician.id, nextStatus, {
+      hospitalId: hospitalId.value,
+      updatedBy: authUser.value.id,
+    });
+
+    if (!result.ok) {
+      window.alert(result.error || "Could not update user status.");
+      return;
+    }
+
+    await queryClient.invalidateQueries({ queryKey: cliniciansQueryKey.value });
+    await refetchClinicians();
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "Could not update user status.");
+  } finally {
+    statusUpdatingId.value = "";
+  }
 }
 
 function openClinicianDetail(clinician) {
@@ -288,10 +308,17 @@ watch(showAddModal, (open) => {
               <button
                 type="button"
                 :class="['admin-pill', row.status === 'active' ? 'suspended' : 'active', 'action']"
+                :disabled="statusUpdatingId === row.id"
                 @click.stop="toggleUserStatus(row)"
               >
                 <font-awesome-icon :icon="['fas', row.status === 'active' ? 'user-slash' : 'user-check']" />
-                {{ row.status === "active" ? "Suspend" : "Activate" }}
+                {{
+                  statusUpdatingId === row.id
+                    ? "Updating…"
+                    : row.status === "active"
+                      ? "Suspend"
+                      : "Activate"
+                }}
               </button>
             </td>
           </tr>

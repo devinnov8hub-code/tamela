@@ -1,5 +1,5 @@
 import { ROLE_CLINICIAN } from "../constants/roles.js";
-import { USER_STATUS_SUSPENDED } from "../constants/userStatus.js";
+import { USER_STATUS_ACTIVE, USER_STATUS_SUSPENDED } from "../constants/userStatus.js";
 import { requireSupabase } from "./supabase.js";
 import { profileDisplayName } from "../utils/profileDisplay.js";
 
@@ -257,17 +257,44 @@ async function fetchReportCountsByClinician(hospitalId) {
 /**
  * @param {string} userId
  * @param {'ACTIVE' | 'SUSPENDED'} status
+ * @param {{ hospitalId?: string, updatedBy?: string }} [options]
  */
-export async function setClinicianStatus(userId, status) {
+export async function setClinicianStatus(userId, status, options = {}) {
   const client = requireSupabase();
-  const rpcName = status === USER_STATUS_SUSPENDED ? "suspend_user" : "activate_user";
-  const { error } = await client.rpc(rpcName, { target_user_id: userId });
+  const { hospitalId, updatedBy } = options;
 
-  if (error) {
-    return { ok: false, error: error.message };
+  if (status !== USER_STATUS_ACTIVE && status !== USER_STATUS_SUSPENDED) {
+    return { ok: false, error: "Invalid status value." };
   }
 
-  return { ok: true };
+  let updateQuery = client
+    .from("profiles")
+    .update({
+      status,
+      ...(updatedBy ? { updated_by: updatedBy } : {}),
+    })
+    .eq("id", userId)
+    .eq("role", ROLE_CLINICIAN);
+
+  if (hospitalId) {
+    updateQuery = updateQuery.eq("hospital_id", hospitalId);
+  }
+
+  const { data, error } = await updateQuery.select("id, status").maybeSingle();
+
+  if (!error && data) {
+    return { ok: true };
+  }
+
+  const rpcName = status === USER_STATUS_SUSPENDED ? "suspend_user" : "activate_user";
+  const { error: rpcError } = await client.rpc(rpcName, { target_user_id: userId });
+
+  if (!rpcError) {
+    return { ok: true };
+  }
+
+  const detail = error?.message || rpcError.message || "Could not update user status.";
+  return { ok: false, error: detail };
 }
 
 /**

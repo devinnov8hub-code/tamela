@@ -183,6 +183,19 @@ export async function fetchReportById(hospitalId, reportId) {
 }
 
 /**
+ * @param {unknown} error
+ */
+export function formatSupabaseError(error) {
+  if (!error) return "Unknown error";
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null) {
+    const row = /** @type {{ message?: string, details?: string, hint?: string }} */ (error);
+    return [row.message, row.details, row.hint].filter(Boolean).join(" — ") || "Request failed";
+  }
+  return String(error);
+}
+
+/**
  * @param {string} hospitalId
  * @param {string} reportId
  * @param {string} clinicianId
@@ -206,17 +219,36 @@ export async function deleteReportById(hospitalId, reportId, clinicianId) {
     return { error: { message: "Report not found." } };
   }
 
-  const { error: transcriptionError } = await client
+  const { data: deletedTranscriptions, error: transcriptionError } = await client
     .from("report_transcriptions")
     .delete()
-    .eq("report_id", reportId);
+    .eq("report_id", reportId)
+    .select("id");
 
   if (transcriptionError) {
     return { error: transcriptionError };
   }
 
-  const { error } = await client.from("reports").delete().eq("id", reportId);
-  return { error: error ?? null };
+  const { data: deletedReports, error: reportError } = await client
+    .from("reports")
+    .delete()
+    .eq("id", reportId)
+    .select("id");
+
+  if (reportError) {
+    return { error: reportError };
+  }
+
+  if (!deletedReports?.length) {
+    return {
+      error: {
+        message:
+          "Report could not be deleted. Your account may not have delete permission — ask an admin to apply the latest database policies.",
+      },
+    };
+  }
+
+  return { deleted: true, transcriptionRows: deletedTranscriptions?.length ?? 0 };
 }
 
 /**

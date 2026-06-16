@@ -3,23 +3,27 @@ const DEFAULT_BASE = "https://js24tdd3kz.eu-west-1.awsapprunner.com";
 const DEFAULT_BEARER_TOKEN = "Secure@innov8-iwyer6wegbcfw8y";
 const DEV_PROXY_BASE = "/scribe-api";
 export const SCRIBE_TRANSCRIBE_PATH = "/api/audio/transcribe";
+export const SCRIBE_REPORT_FROM_TEXT_PATH = "/api/report/from-text";
 
+/** Public Scribe host (vite/vercel proxy target). Browser calls use DEV_PROXY_BASE to avoid CORS. */
 export function getScribeApiBase() {
-  const raw = import.meta.env.VITE_SCRIBE_API_BASE?.trim();
-  if (raw) return raw;
-  // Use same-origin proxy by default to avoid browser CORS in both dev and production.
-  // - Dev proxy is configured in `vite.config.js`
-  // - Production proxy is configured in `vercel.json`
   return DEV_PROXY_BASE;
 }
 
-function transcribeUrl(base = getScribeApiBase()) {
+export function getScribeApiDirectBase() {
+  return DEFAULT_BASE;
+}
+
+function scribeApiUrl(path, base = getScribeApiBase()) {
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
-  // Allow relative dev proxy base (e.g. "/scribe-api") without URL constructor errors.
   if (normalizedBase.startsWith("/")) {
-    return `${normalizedBase}${SCRIBE_TRANSCRIBE_PATH}`;
+    return `${normalizedBase}${path}`;
   }
-  return new URL(SCRIBE_TRANSCRIBE_PATH, `${normalizedBase}/`).href;
+  return new URL(path, `${normalizedBase}/`).href;
+}
+
+function transcribeUrl(base = getScribeApiBase()) {
+  return scribeApiUrl(SCRIBE_TRANSCRIBE_PATH, base);
 }
 
 function extensionForMime(mime = "") {
@@ -39,7 +43,7 @@ function extensionForMime(mime = "") {
  * @returns {Promise<Record<string, unknown>>}
  */
 export async function transcribeAudio(file, opts = {}) {
-  const token = opts.token ?? import.meta.env.VITE_SCRIBE_API_TOKEN?.trim() ?? DEFAULT_BEARER_TOKEN;
+  const token = opts.token ?? DEFAULT_BEARER_TOKEN;
   const body = new FormData();
   const mime = file?.type || "audio/webm";
   const safeName =
@@ -52,23 +56,12 @@ export async function transcribeAudio(file, opts = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const url = transcribeUrl(opts.baseUrl);
-  let res;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      body,
-      headers,
-      signal: opts.signal,
-    });
-  } catch (e) {
-    const hint =
-      url.startsWith("/") && typeof window !== "undefined" && window.location.hostname
-        ? " Check that your host proxies /scribe-api to the scribe API (e.g. vercel.json rewrites) or set VITE_SCRIBE_API_BASE to a reachable URL."
-        : " Check network, CORS, and that the scribe API URL is correct.";
-    throw new Error(
-      `Transcription request failed (${e instanceof Error ? e.message : "network error"}).${hint}`,
-    );
-  }
+  const res = await fetch(url, {
+    method: "POST",
+    body,
+    headers,
+    signal: opts.signal,
+  });
 
   const responseHeaders = Object.fromEntries(res.headers.entries());
 
@@ -87,6 +80,60 @@ export async function transcribeAudio(file, opts = {}) {
 
   const data = await res.json();
   console.log("[scribe] transcription response:", {
+    url,
+    status: res.status,
+    statusText: res.statusText,
+    ok: res.ok,
+    headers: responseHeaders,
+    body: data,
+  });
+  return data;
+}
+
+/**
+ * POST JSON { text, specialty } → formatted clinical report.
+ * @param {string} text
+ * @param {{ specialty?: string, baseUrl?: string, token?: string, signal?: AbortSignal }} [opts]
+ * @returns {Promise<Record<string, unknown>>}
+ */
+export async function reportFromText(text, opts = {}) {
+  const token = opts.token ?? DEFAULT_BEARER_TOKEN;
+  const trimmed = (text || "").trim();
+  if (trimmed.length < 10) {
+    throw new Error("Transcript is too short to generate a report (minimum 10 characters).");
+  }
+
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const url = scribeApiUrl(SCRIBE_REPORT_FROM_TEXT_PATH, opts.baseUrl);
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      text: trimmed,
+      specialty: opts.specialty ?? "Radiology/Ultrasound",
+    }),
+    signal: opts.signal,
+  });
+
+  const responseHeaders = Object.fromEntries(res.headers.entries());
+
+  if (!res.ok) {
+    const bodyText = await res.text();
+    console.log("[scribe] report/from-text response (error):", {
+      url,
+      status: res.status,
+      statusText: res.statusText,
+      ok: res.ok,
+      headers: responseHeaders,
+      body: bodyText,
+    });
+    throw new Error(`Report generation failed (${res.status}): ${bodyText.slice(0, 800)}`);
+  }
+
+  const data = await res.json();
+  console.log("[scribe] report/from-text response:", {
     url,
     status: res.status,
     statusText: res.statusText,
