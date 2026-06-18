@@ -95,16 +95,9 @@ const noteTitle = computed(
     reportMeta.value.caseTitle ||
     "Clinical Consultation Note"
 );
-const caseRefLabel = computed(() => {
-  if (savedReport.value?.reportId) {
-    return `Report ID: ${savedReport.value.reportId}`;
-  }
-  return "Report ID: (not saved yet)";
-});
 
 const exportNotePayload = computed(() => ({
   title: noteTitle.value,
-  caseRef: caseRefLabel.value,
   error: errorText.value,
   blocks: reportBlocks.value.map((block) => ({
     heading: block.heading,
@@ -739,7 +732,6 @@ onMounted(loadTranscription);
         </template>
         <template v-else>
           <h2 class="transcription-note-title">{{ noteTitle }}</h2>
-          <p class="case-ref">{{ caseRefLabel }}</p>
           <p
             v-if="autoSaveInProgress"
             class="auth-form-message auth-form-message--info"
@@ -772,6 +764,18 @@ onMounted(loadTranscription);
                 @blur="syncBlockHtml(index, $event)"
               />
             </section>
+            <footer class="ai-draft-disclaimer" role="note">
+              <p class="ai-draft-disclaimer-title">⚠️ AI-Generated Draft</p>
+              <p>
+                This report was generated with assistance from TScribe AI and may contain errors
+                or omissions.
+              </p>
+              <p>
+                A qualified healthcare professional must review, verify, and approve this report
+                before clinical use.
+              </p>
+              <p>The clinician remains responsible for the final report content.</p>
+            </footer>
           </template>
           <template v-else>
             <p class="transcription-paragraph">No report content available yet.</p>
@@ -827,6 +831,25 @@ onMounted(loadTranscription);
   color: #b42318;
   font-size: 0.9rem;
   margin: 0 0 12px;
+}
+
+.ai-draft-disclaimer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.ai-draft-disclaimer-title {
+  font-weight: 600;
+  color: #92400e;
+  margin: 0 0 8px;
+}
+
+.ai-draft-disclaimer p {
+  margin: 0 0 6px;
 }
 
 .transcription-unsaved-hint {
