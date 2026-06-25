@@ -120,7 +120,7 @@ function applyReportResponse(normalized) {
     criticalFields: normalized.criticalFields,
   };
   reportBlocks.value = templateTextToBlocks(normalized.templateText);
-  insightSections.value = criticalFieldsToInsightSections(normalized.criticalFields, []);
+  insightSections.value = criticalFieldsToInsightSections(normalized.criticalFields);
   reportContentKey.value += 1;
   blockEditorRefs.value = [];
 }
@@ -783,7 +783,7 @@ onMounted(loadTranscription);
         </template>
       </article>
 
-      <aside v-if="!isLoading && insightSections.length" class="insight-panel">
+      <aside v-if="!isLoading && !errorText && reportBlocks.length" class="insight-panel">
         <article v-for="section in insightSections" :key="section.title" class="insight-card">
           <header class="insight-card-head">
             <span class="insight-card-icon" aria-hidden="true">
@@ -794,7 +794,7 @@ onMounted(loadTranscription);
           <dl class="insight-rows">
             <div v-for="row in section.rows" :key="row.label" class="insight-row">
               <dt>{{ row.label }}</dt>
-              <dd>{{ row.value }}</dd>
+              <dd :class="{ 'insight-row-value--empty': !row.value }">{{ row.value }}</dd>
             </div>
           </dl>
         </article>
@@ -850,6 +850,10 @@ onMounted(loadTranscription);
 
 .ai-draft-disclaimer p {
   margin: 0 0 6px;
+}
+
+:deep(.insight-row-value--empty) {
+  min-height: 1.25em;
 }
 
 .transcription-unsaved-hint {

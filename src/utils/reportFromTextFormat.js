@@ -7,6 +7,45 @@
 const INSIGHT_ICONS = ["stethoscope", "magnifying-glass", "clipboard-list"];
 const INSIGHT_TITLES = ["Clinical Impression", "Differential Diagnosis", "Diagnostic Plan"];
 
+/** Design placeholder cards when the API sends no critical_fields. */
+export const DEFAULT_INSIGHT_SECTIONS = [
+  {
+    title: INSIGHT_TITLES[0],
+    icon: INSIGHT_ICONS[0],
+    rows: [
+      { label: "Localized Pain Location", value: "" },
+      { label: "Pain Radiation Point", value: "" },
+    ],
+  },
+  {
+    title: INSIGHT_TITLES[1],
+    icon: INSIGHT_ICONS[1],
+    rows: [
+      { label: "Vitals", value: "" },
+      { label: "Risk Level", value: "" },
+    ],
+  },
+  {
+    title: INSIGHT_TITLES[2],
+    icon: INSIGHT_ICONS[2],
+    rows: [
+      { label: "Orders", value: "" },
+      { label: "Status", value: "" },
+    ],
+  },
+];
+
+/**
+ * @param {InsightSection[]} sections
+ * @returns {InsightSection[]}
+ */
+function cloneInsightSections(sections) {
+  return sections.map((section) => ({
+    ...section,
+    rows: section.rows.map((row) => ({ ...row })),
+  }));
+}
+
 /**
  * @param {CriticalField} field
  */
@@ -20,12 +59,12 @@ function formatCriticalValue(field) {
 
 /**
  * @param {CriticalField[]} fields
- * @param {InsightSection[]} fallback
+ * @param {InsightSection[]} [fallback]
  * @returns {InsightSection[]}
  */
-export function criticalFieldsToInsightSections(fields, fallback) {
+export function criticalFieldsToInsightSections(fields, fallback = DEFAULT_INSIGHT_SECTIONS) {
   if (!Array.isArray(fields) || fields.length === 0) {
-    return fallback;
+    return cloneInsightSections(fallback);
   }
 
   if (fields.length <= 2) {
@@ -248,12 +287,12 @@ export function parseSavedFormattedReport(formatted) {
       };
     });
 
-    const insightSections = Array.isArray(raw.sections)
-      ? /** @type {InsightSection[]} */ (raw.sections)
-      : criticalFieldsToInsightSections(
-          Array.isArray(raw.criticalFields) ? /** @type {CriticalField[]} */ (raw.criticalFields) : [],
-          []
-        );
+    const insightSections =
+      Array.isArray(raw.sections) && raw.sections.length
+        ? /** @type {InsightSection[]} */ (raw.sections)
+        : criticalFieldsToInsightSections(
+            Array.isArray(raw.criticalFields) ? /** @type {CriticalField[]} */ (raw.criticalFields) : []
+          );
 
     const criticalFields = Array.isArray(raw.criticalFields)
       ? /** @type {CriticalField[]} */ (raw.criticalFields)
@@ -271,7 +310,7 @@ export function parseSavedFormattedReport(formatted) {
     });
     return {
       blocks: templateTextToBlocks(normalized.templateText),
-      insightSections: criticalFieldsToInsightSections(normalized.criticalFields, []),
+      insightSections: criticalFieldsToInsightSections(normalized.criticalFields),
       criticalFields: normalized.criticalFields,
     };
   }

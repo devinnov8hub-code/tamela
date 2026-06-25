@@ -2581,6 +2581,11 @@ a {
   display: block;
 }
 
+.admin-shell .logo-wrap img.hospital-brand-logo {
+  max-height: 72px;
+  object-fit: contain;
+}
+
 .nav-list {
   margin-top: 18px;
   display: flex;

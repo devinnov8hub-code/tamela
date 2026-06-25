@@ -15,7 +15,7 @@ defineProps({
 
 const emit = defineEmits(["update:searchValue"]);
 const router = useRouter();
-const { displayName } = useAuth();
+const { displayName, hospitalLogoUrl } = useAuth();
 
 const navItems = [
   { label: "Dashboard", to: "/admin/dashboard", icon: "chart-line" },
@@ -35,7 +35,13 @@ function navigate(item) {
   <div class="admin-shell">
     <aside class="admin-sidebar">
       <div class="logo-wrap">
-        <img src="/logo-with-text.png" alt="Tamela logo" />
+        <img
+          v-if="hospitalLogoUrl"
+          :src="hospitalLogoUrl"
+          :alt="`${displayName} hospital logo`"
+          class="hospital-brand-logo"
+        />
+        <img v-else src="/logo-with-text.png" alt="Tamela logo" />
       </div>
 
       <nav class="admin-nav-list">

@@ -1,9 +1,15 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from "vue";
 import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
 import { createDepartment, fetchDepartmentsByHospital } from "../services/departmentService.js";
+import {
+  fetchHospitalById,
+  updateHospitalIdentity,
+  uploadHospitalLogo,
+  validateHospitalLogoFile,
+} from "../services/hospitalService.js";
 import { createSpecialty, fetchSpecialtiesByHospital } from "../services/specialtyService.js";
 
 const searchTerm = ref("");
@@ -14,10 +20,28 @@ const newSpecialtyName = ref("");
 const specialtyError = ref("");
 const specialtySaving = ref(false);
 
+const logoInputRef = useTemplateRef("logoInput");
+const pendingLogoFile = ref(null);
+const pendingLogoPreviewUrl = ref("");
+const identitySaving = ref(false);
+const identityError = ref("");
+const identitySuccess = ref("");
+
 const queryClient = useQueryClient();
-const { hospitalId, user: authUser, hospitalName } = useAuth();
+const { hospitalId, user: authUser, hospitalName, hospitalLogoUrl, loadProfile } = useAuth();
 
 const departmentsQueryKey = computed(() => ["departments", hospitalId.value]);
+const hospitalQueryKey = computed(() => ["hospital", hospitalId.value]);
+
+const { data: hospitalData, isLoading: hospitalLoading } = useQuery({
+  queryKey: hospitalQueryKey,
+  enabled: computed(() => Boolean(hospitalId.value)),
+  queryFn: async () => {
+    const { hospital, error } = await fetchHospitalById(hospitalId.value);
+    if (error) throw error;
+    return hospital;
+  },
+});
 
 const { data: departmentsData, isLoading: departmentsLoading } = useQuery({
   queryKey: departmentsQueryKey,
@@ -55,13 +79,110 @@ const identityForm = reactive({
   legalName: "",
 });
 
+const displayedLogoUrl = computed(
+  () => pendingLogoPreviewUrl.value || hospitalData.value?.logo_url || hospitalLogoUrl.value || ""
+);
+
 watch(
-  hospitalName,
+  () => hospitalData.value?.name ?? hospitalName.value ?? "",
   (name) => {
     if (name) identityForm.legalName = name;
   },
   { immediate: true }
 );
+
+function clearPendingLogoPreview() {
+  if (pendingLogoPreviewUrl.value) {
+    URL.revokeObjectURL(pendingLogoPreviewUrl.value);
+    pendingLogoPreviewUrl.value = "";
+  }
+}
+
+function openLogoPicker() {
+  if (identitySaving.value) return;
+  logoInputRef.value?.click();
+}
+
+function onLogoSelected(event) {
+  identityError.value = "";
+  identitySuccess.value = "";
+
+  const file = event.target?.files?.[0];
+  event.target.value = "";
+
+  if (!file) return;
+
+  const validationError = validateHospitalLogoFile(file);
+  if (validationError) {
+    identityError.value = validationError;
+    return;
+  }
+
+  clearPendingLogoPreview();
+  pendingLogoFile.value = file;
+  pendingLogoPreviewUrl.value = URL.createObjectURL(file);
+}
+
+async function handleSaveIdentity() {
+  identityError.value = "";
+  identitySuccess.value = "";
+
+  if (!hospitalId.value || !authUser.value?.id) {
+    identityError.value = "Hospital context is missing. Sign in again.";
+    return;
+  }
+
+  const trimmedName = identityForm.legalName.trim();
+  if (!trimmedName) {
+    identityError.value = "Enter the hospital legal name.";
+    return;
+  }
+
+  const currentName = hospitalData.value?.name?.trim() || "";
+  const nameChanged = trimmedName !== currentName;
+  const hasLogo = Boolean(pendingLogoFile.value);
+
+  if (!nameChanged && !hasLogo) {
+    identityError.value = "No changes to save.";
+    return;
+  }
+
+  identitySaving.value = true;
+  try {
+    if (hasLogo && pendingLogoFile.value) {
+      const { error } = await uploadHospitalLogo(hospitalId.value, pendingLogoFile.value);
+      if (error) {
+        identityError.value = error.message || "Could not upload hospital logo.";
+        return;
+      }
+      pendingLogoFile.value = null;
+      clearPendingLogoPreview();
+    }
+
+    if (nameChanged) {
+      const { hospital, error } = await updateHospitalIdentity(hospitalId.value, {
+        name: trimmedName,
+      });
+      if (error || !hospital) {
+        identityError.value = error?.message || "Could not update hospital name.";
+        return;
+      }
+    }
+
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: hospitalQueryKey.value }),
+      loadProfile(),
+    ]);
+
+    identitySuccess.value = "Hospital identity saved.";
+  } finally {
+    identitySaving.value = false;
+  }
+}
+
+onBeforeUnmount(() => {
+  clearPendingLogoPreview();
+});
 
 async function handleAddDepartment() {
   departmentError.value = "";
@@ -144,24 +265,67 @@ async function handleAddSpecialty() {
           <h3><font-awesome-icon :icon="['fas', 'file-lines']" /> Hospital Identity</h3>
         </header>
         <div class="admin-settings-body">
+          <p v-if="hospitalLoading" class="auth-form-message auth-form-message--info">Loading hospital…</p>
+
           <div class="admin-identity-grid">
             <div>
               <label>Hospital logo</label>
-              <div class="admin-logo-upload">
-                <font-awesome-icon :icon="['fas', 'plus']" />
-                <strong>UPLOAD LOGO</strong>
-              </div>
+              <input
+                ref="logoInput"
+                type="file"
+                class="sr-only"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                :disabled="identitySaving"
+                @change="onLogoSelected"
+              />
+              <button
+                type="button"
+                class="admin-logo-upload"
+                :class="{ 'admin-logo-upload--has-image': Boolean(displayedLogoUrl) }"
+                :disabled="identitySaving"
+                aria-label="Upload hospital logo"
+                @click="openLogoPicker"
+              >
+                <img
+                  v-if="displayedLogoUrl"
+                  :src="displayedLogoUrl"
+                  alt="Hospital logo preview"
+                  class="admin-logo-preview"
+                />
+                <template v-else>
+                  <font-awesome-icon :icon="['fas', 'plus']" />
+                  <strong>UPLOAD LOGO</strong>
+                </template>
+              </button>
               <small>PNG or JPG. Max 2MB</small>
             </div>
             <div class="admin-identity-fields">
               <label>
                 Hospital Legal Name
-                <input v-model="identityForm.legalName" type="text" :placeholder="hospitalName || 'Hospital name'" />
+                <input
+                  v-model="identityForm.legalName"
+                  type="text"
+                  :placeholder="hospitalName || 'Hospital name'"
+                  :disabled="identitySaving"
+                />
               </label>
             </div>
           </div>
+
+          <p v-if="identityError" class="auth-form-message" role="alert">{{ identityError }}</p>
+          <p v-if="identitySuccess" class="auth-form-message auth-form-message--info" role="status">
+            {{ identitySuccess }}
+          </p>
+
           <div class="admin-settings-actions">
-            <button type="button" class="admin-settings-btn">Save Changes</button>
+            <button
+              type="button"
+              class="admin-settings-btn"
+              :disabled="identitySaving || hospitalLoading"
+              @click="handleSaveIdentity"
+            >
+              {{ identitySaving ? "Saving…" : "Save Changes" }}
+            </button>
           </div>
         </div>
       </article>
@@ -266,3 +430,56 @@ async function handleAddSpecialty() {
     </section>
   </AdminShell>
 </template>
+
+<style scoped>
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.admin-logo-upload {
+  margin-top: 8px;
+  width: 150px;
+  height: 150px;
+  border-radius: 10px;
+  border: 1px dashed #d1d5db;
+  display: grid;
+  place-items: center;
+  color: #9ca3af;
+  text-align: center;
+  gap: 8px;
+  padding: 0;
+  background: #fff;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.admin-logo-upload:hover:not(:disabled) {
+  border-color: #94a3b8;
+  color: #64748b;
+}
+
+.admin-logo-upload:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.admin-logo-upload--has-image {
+  border-style: solid;
+}
+
+.admin-logo-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #fff;
+}
+</style>
