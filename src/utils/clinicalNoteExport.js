@@ -337,6 +337,10 @@ export function htmlToPlainText(html) {
     .trim();
 }
 
+/** Short AI disclaimer included in Smart Copy / PDF (full text stays in the UI modal). */
+export const AI_DISCLAIMER_SHORT =
+  "AI-Generated Draft — Clinician review required before clinical use.";
+
 /**
  * @param {{
  *   title?: string,
@@ -344,6 +348,7 @@ export function htmlToPlainText(html) {
  *   transcript?: string,
  *   error?: string,
  *   includeTranscript?: boolean,
+ *   disclaimerShort?: string,
  *   sections?: Array<{ title: string, items: string[] }>,
  *   blocks?: Array<{ heading: string, body: string }>,
  * }} parts
@@ -388,6 +393,11 @@ export function buildClinicalNotePlainText(parts) {
     lines.push("");
   }
 
+  if (parts.disclaimerShort?.trim()) {
+    lines.push(parts.disclaimerShort.trim());
+    lines.push("");
+  }
+
   if (parts.includeTranscript && parts.transcript?.trim()) {
     lines.push("Source Transcript", parts.transcript.trim());
   }
@@ -402,6 +412,7 @@ export function buildClinicalNotePlainText(parts) {
  *   transcript?: string,
  *   error?: string,
  *   includeTranscript?: boolean,
+ *   disclaimerShort?: string,
  *   sections?: Array<{ title: string, items: string[] }>,
  *   blocks?: Array<{ heading: string, body: string }>,
  * }} parts
@@ -445,6 +456,14 @@ export function buildClinicalNoteHtml(parts) {
       chunks.push(`<li>${escapeHtml(item)}</li>`);
     }
     chunks.push("</ul>");
+  }
+
+  if (parts.disclaimerShort?.trim()) {
+    chunks.push(
+      `<p style="margin-top:16px;font-size:0.85em;color:#6b7280;"><em>${escapeHtml(
+        parts.disclaimerShort.trim()
+      )}</em></p>`
+    );
   }
 
   if (parts.includeTranscript && parts.transcript?.trim()) {
