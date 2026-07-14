@@ -17,6 +17,7 @@ import {
 } from "../services/reportService.js";
 import { fetchSpecialtiesByHospital } from "../services/specialtyService.js";
 import {
+  AI_DISCLAIMER_SHORT,
   buildClinicalNoteHtml,
   buildClinicalNotePlainText,
   copyRichTextToClipboard,
@@ -96,6 +97,8 @@ const noteTitle = computed(
     "Clinical Consultation Note"
 );
 
+const showAiDisclaimerModal = ref(false);
+
 const exportNotePayload = computed(() => ({
   title: noteTitle.value,
   error: errorText.value,
@@ -103,10 +106,7 @@ const exportNotePayload = computed(() => ({
     heading: block.heading,
     body: block.html,
   })),
-  sections: insightSections.value.map((section) => ({
-    title: section.title,
-    items: section.rows.map((row) => `${row.label}: ${row.value}`),
-  })),
+  disclaimerShort: AI_DISCLAIMER_SHORT,
 }));
 
 const exportableText = computed(() => buildClinicalNotePlainText(exportNotePayload.value));
@@ -765,16 +765,13 @@ onMounted(loadTranscription);
               />
             </section>
             <footer class="ai-draft-disclaimer" role="note">
-              <p class="ai-draft-disclaimer-title">⚠️ AI-Generated Draft</p>
-              <p>
-                This report was generated with assistance from TScribe AI and may contain errors
-                or omissions.
-              </p>
-              <p>
-                A qualified healthcare professional must review, verify, and approve this report
-                before clinical use.
-              </p>
-              <p>The clinician remains responsible for the final report content.</p>
+              <button
+                type="button"
+                class="ai-draft-disclaimer-trigger"
+                @click="showAiDisclaimerModal = true"
+              >
+                {{ AI_DISCLAIMER_SHORT }}
+              </button>
             </footer>
           </template>
           <template v-else>
@@ -800,6 +797,37 @@ onMounted(loadTranscription);
         </article>
       </aside>
     </section>
+
+    <div
+      v-if="showAiDisclaimerModal"
+      class="admin-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ai-disclaimer-modal-title"
+      @click.self="showAiDisclaimerModal = false"
+    >
+      <div class="admin-modal-card ai-disclaimer-modal-card">
+        <div class="admin-modal-head">
+          <span id="ai-disclaimer-modal-title" class="admin-modal-chip ai-disclaimer-modal-chip">
+            ⚠️ AI-Generated Draft
+          </span>
+        </div>
+        <p>
+          This report was generated with assistance from TScribe AI and may contain errors or
+          omissions.
+        </p>
+        <p>
+          A qualified healthcare professional must review, verify, and approve this report before
+          clinical use.
+        </p>
+        <p>The clinician remains responsible for the final report content.</p>
+        <div class="admin-modal-actions">
+          <button type="button" class="admin-modal-btn create" @click="showAiDisclaimerModal = false">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   </AppShell>
 </template>
 
@@ -837,19 +865,46 @@ onMounted(loadTranscription);
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid #e5e7eb;
+}
+
+.ai-draft-disclaimer-trigger {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
   font-size: 0.8rem;
   line-height: 1.5;
   color: #6b7280;
+  text-align: left;
+  cursor: pointer;
 }
 
-.ai-draft-disclaimer-title {
-  font-weight: 600;
-  color: #92400e;
-  margin: 0 0 8px;
+.ai-draft-disclaimer-trigger:hover,
+.ai-draft-disclaimer-trigger:focus-visible {
+  color: #4b5563;
 }
 
-.ai-draft-disclaimer p {
-  margin: 0 0 6px;
+.ai-disclaimer-modal-card {
+  max-width: 480px;
+}
+
+.ai-disclaimer-modal-chip {
+  font-size: 1rem;
+  padding: 6px 14px;
+}
+
+.ai-disclaimer-modal-card p {
+  margin: 0 0 10px;
+  color: #4b5563;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.ai-disclaimer-modal-card .admin-modal-actions {
+  margin-top: 8px;
+  justify-content: flex-end;
 }
 
 :deep(.insight-row-value--empty) {

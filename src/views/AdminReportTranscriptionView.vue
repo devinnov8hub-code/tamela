@@ -6,6 +6,7 @@ import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
 import { fetchReportById, fetchReportTranscription } from "../services/reportService.js";
 import {
+  AI_DISCLAIMER_SHORT,
   buildClinicalNoteHtml,
   buildClinicalNotePlainText,
   copyRichTextToClipboard,
@@ -81,10 +82,7 @@ const exportNotePayload = computed(() => {
       heading: block.heading,
       body: block.html,
     })),
-    sections: insightSections.value.map((section) => ({
-      title: section.title,
-      items: section.rows.map((item) => `${item.label}: ${item.value}`),
-    })),
+    disclaimerShort: AI_DISCLAIMER_SHORT,
   };
 });
 
