@@ -11,6 +11,7 @@ import {
   validateHospitalLogoFile,
 } from "../services/hospitalService.js";
 import { createSpecialty, fetchSpecialtiesByHospital } from "../services/specialtyService.js";
+import { requireSupabase } from "../services/supabase.js";
 
 const searchTerm = ref("");
 const newDepartmentName = ref("");
@@ -26,6 +27,9 @@ const pendingLogoPreviewUrl = ref("");
 const identitySaving = ref(false);
 const identityError = ref("");
 const identitySuccess = ref("");
+const passwordSaving = ref(false);
+const passwordError = ref("");
+const passwordSuccess = ref("");
 
 const queryClient = useQueryClient();
 const { hospitalId, user: authUser, hospitalName, hospitalLogoUrl, loadProfile } = useAuth();
@@ -70,7 +74,7 @@ const { data: specialtiesData, isLoading: specialtiesLoading } = useQuery({
 const specialties = computed(() => specialtiesData.value ?? []);
 
 const securityForm = reactive({
-  currentPassword: "..........",
+  currentPassword: "",
   newPassword: "",
   confirmNewPassword: "",
 });
@@ -183,6 +187,65 @@ async function handleSaveIdentity() {
 onBeforeUnmount(() => {
   clearPendingLogoPreview();
 });
+
+async function handleUpdatePassword() {
+  passwordError.value = "";
+  passwordSuccess.value = "";
+
+  const current = securityForm.currentPassword;
+  const next = securityForm.newPassword;
+  const confirm = securityForm.confirmNewPassword;
+
+  if (!current || !next || !confirm) {
+    passwordError.value = "Fill in all password fields.";
+    return;
+  }
+
+  if (next.length < 8) {
+    passwordError.value = "New password must be at least 8 characters.";
+    return;
+  }
+
+  if (next !== confirm) {
+    passwordError.value = "New passwords do not match.";
+    return;
+  }
+
+  const email = authUser.value?.email;
+  if (!email) {
+    passwordError.value = "Sign in again to update your password.";
+    return;
+  }
+
+  passwordSaving.value = true;
+  try {
+    const client = requireSupabase();
+    const { error: reauthError } = await client.auth.signInWithPassword({
+      email,
+      password: current,
+    });
+
+    if (reauthError) {
+      passwordError.value = "Current password is incorrect.";
+      return;
+    }
+
+    const { error } = await client.auth.updateUser({ password: next });
+    if (error) {
+      passwordError.value = error.message || "Could not update password.";
+      return;
+    }
+
+    securityForm.currentPassword = "";
+    securityForm.newPassword = "";
+    securityForm.confirmNewPassword = "";
+    passwordSuccess.value = "Password updated.";
+  } catch (error) {
+    passwordError.value = error instanceof Error ? error.message : "Could not update password.";
+  } finally {
+    passwordSaving.value = false;
+  }
+}
 
 async function handleAddDepartment() {
   departmentError.value = "";
@@ -410,20 +473,49 @@ async function handleAddSpecialty() {
           <div class="admin-settings-grid">
             <label>
               Current Password
-              <input v-model="securityForm.currentPassword" type="password" />
+              <input
+                v-model="securityForm.currentPassword"
+                type="password"
+                autocomplete="current-password"
+                placeholder="Current password"
+                :disabled="passwordSaving"
+              />
             </label>
             <span></span>
             <label>
               New Password
-              <input v-model="securityForm.newPassword" type="password" placeholder="Enter New Password" />
+              <input
+                v-model="securityForm.newPassword"
+                type="password"
+                autocomplete="new-password"
+                placeholder="Enter New Password"
+                :disabled="passwordSaving"
+              />
             </label>
             <label>
               Confirm New Password
-              <input v-model="securityForm.confirmNewPassword" type="password" placeholder="Repeat New Password" />
+              <input
+                v-model="securityForm.confirmNewPassword"
+                type="password"
+                autocomplete="new-password"
+                placeholder="Repeat New Password"
+                :disabled="passwordSaving"
+              />
             </label>
           </div>
+          <p v-if="passwordError" class="auth-form-message" role="alert">{{ passwordError }}</p>
+          <p v-if="passwordSuccess" class="auth-form-message auth-form-message--info" role="status">
+            {{ passwordSuccess }}
+          </p>
           <div class="admin-settings-actions">
-            <button type="button" class="admin-settings-btn">Update Password</button>
+            <button
+              type="button"
+              class="admin-settings-btn"
+              :disabled="passwordSaving"
+              @click="handleUpdatePassword"
+            >
+              {{ passwordSaving ? "Updating…" : "Update Password" }}
+            </button>
           </div>
         </div>
       </article>

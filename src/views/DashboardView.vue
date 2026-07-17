@@ -1,12 +1,29 @@
 <script setup>
-import { computed } from "vue";
-import { useQuery } from "@tanstack/vue-query";
+import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
+import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppShell from "../components/AppShell.vue";
 import { useAuth } from "../composables/useAuth.js";
-import { fetchReportsForClinician } from "../services/reportService.js";
+import {
+  deleteReportById,
+  fetchReportsForClinician,
+  formatSupabaseError,
+} from "../services/reportService.js";
+import { getLastSavedReportId, setLastSavedReportId } from "../session/scribeSession.js";
 import { formatReportDate } from "../utils/formatDateTime.js";
+import { matchesDateFilter, matchesStatusFilter } from "../utils/reportListFilters.js";
 
+const router = useRouter();
+const queryClient = useQueryClient();
 const { displayName, hospitalId, user } = useAuth();
+
+const searchQuery = ref("");
+const statusFilter = ref("all");
+const dateFilter = ref("all");
+const editTarget = ref(null);
+const deleteTarget = ref(null);
+const deleteInProgress = ref(false);
+const deleteError = ref("");
 
 const {
   data: reportsData,
@@ -50,33 +67,142 @@ const stats = computed(() => {
   ];
 });
 
-const rows = computed(() =>
-  reports.value.map((row) => ({
-    id: row.id,
-    title: row.caseTitle,
-    sessionType: row.sessionType,
-    timestamp: formatReportDate(row.createdAt),
-    status:
-      row.status === "completed" ? "Completed" : row.status === "processing" ? "Processing" : "Draft",
-    tone: row.status === "completed" ? "green" : row.status === "processing" ? "blue" : "amber",
-  }))
-);
+function statusLabel(status) {
+  if (status === "completed") return "Completed";
+  if (status === "processing") return "Processing";
+  return "Draft";
+}
+
+const rows = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  return reports.value
+    .filter((row) => matchesStatusFilter(row.status, statusFilter.value))
+    .filter((row) => matchesDateFilter(row.createdAt, dateFilter.value))
+    .filter((row) => {
+      if (!q) return true;
+      const haystack = [row.caseTitle, row.sessionType, statusLabel(row.status)].join(" ").toLowerCase();
+      return haystack.includes(q);
+    })
+    .map((row) => ({
+      id: row.id,
+      title: row.caseTitle || "—",
+      sessionType: row.sessionType || "—",
+      timestamp: formatReportDate(row.createdAt),
+      status: statusLabel(row.status),
+      tone: row.status === "completed" ? "green" : row.status === "processing" ? "blue" : "amber",
+    }));
+});
 
 const signedInUserName = computed(() => displayName.value);
+
+function openEditModal(row) {
+  editTarget.value = row;
+}
+
+function closeEditModal() {
+  editTarget.value = null;
+}
+
+function openDeleteModal(row) {
+  deleteError.value = "";
+  deleteTarget.value = row;
+}
+
+function closeDeleteModal() {
+  if (deleteInProgress.value) return;
+  deleteTarget.value = null;
+  deleteError.value = "";
+}
+
+function confirmOpenReport() {
+  if (!editTarget.value) return;
+  router.push({ name: "clinician-report", query: { reportId: editTarget.value.id } });
+  closeEditModal();
+}
+
+async function confirmDeleteReport() {
+  const target = deleteTarget.value;
+  const hid = hospitalId.value;
+  const uid = user.value?.id;
+  if (!target || !hid || !uid) return;
+
+  deleteInProgress.value = true;
+  deleteError.value = "";
+
+  try {
+    const result = await deleteReportById(hid, target.id, uid);
+    if (result.error) {
+      deleteError.value = formatSupabaseError(result.error);
+      return;
+    }
+
+    if (getLastSavedReportId() === target.id) {
+      setLastSavedReportId("");
+    }
+
+    queryClient.setQueryData(
+      ["clinician-dashboard-reports", hid, uid],
+      (current) => (Array.isArray(current) ? current.filter((row) => row.id !== target.id) : current)
+    );
+
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ["clinician-dashboard-reports", hid, uid] }),
+      queryClient.refetchQueries({ queryKey: ["clinician-library-reports", hid, uid] }),
+      queryClient.invalidateQueries({ queryKey: ["admin-reports", hid] }),
+      queryClient.invalidateQueries({ queryKey: ["clinician-reports", hid, uid] }),
+    ]);
+
+    closeDeleteModal();
+  } catch (err) {
+    deleteError.value = formatSupabaseError(err);
+  } finally {
+    deleteInProgress.value = false;
+  }
+}
+
+function exportToCsv() {
+  const list = rows.value;
+  if (!list.length) return;
+
+  const escape = (value) => `"${String(value).replace(/"/g, '""')}"`;
+  const lines = [
+    ["Case Title", "Session Type", "Timestamp", "Status"].map(escape).join(","),
+    ...list.map((row) =>
+      [row.title, row.sessionType, row.timestamp, row.status].map(escape).join(",")
+    ),
+  ];
+
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `reports-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function goToRecording() {
+  router.push({ name: "clinician-recording-fresh" });
+}
 </script>
 
 <template>
   <AppShell
+    v-model:search-value="searchQuery"
     title="Clinician Overview"
     subtitle="Real-time metrics and system health monitoring"
     active-nav="Dashboard"
+    search-placeholder="Search by case title, session type, or status"
+    wide-search
   >
     <section class="welcome-row">
       <div>
         <h2>Welcome Back {{ signedInUserName }}.</h2>
         <p>Review of latest activity and report status.</p>
       </div>
-      <button class="export-btn" type="button" disabled title="Coming soon">Export to CSV</button>
+      <button class="export-btn" type="button" :disabled="!rows.length" @click="exportToCsv">
+        Export to CSV
+      </button>
     </section>
 
     <section class="stats-grid">
@@ -89,6 +215,69 @@ const signedInUserName = computed(() => displayName.value);
           <h3>{{ isLoading ? "…" : stat.value }}</h3>
         </div>
       </article>
+    </section>
+
+    <section class="report-filters" aria-label="Filter reports">
+      <div class="report-filter-group" role="group" aria-label="Status">
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'all' }"
+          @click="statusFilter = 'all'"
+        >
+          All
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'needs_review' }"
+          @click="statusFilter = 'needs_review'"
+        >
+          Needs review
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'processing' }"
+          @click="statusFilter = 'processing'"
+        >
+          Processing
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'completed' }"
+          @click="statusFilter = 'completed'"
+        >
+          Completed
+        </button>
+      </div>
+      <div class="report-filter-group" role="group" aria-label="Date">
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: dateFilter === 'all' }"
+          @click="dateFilter = 'all'"
+        >
+          All time
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: dateFilter === 'today' }"
+          @click="dateFilter = 'today'"
+        >
+          Today
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: dateFilter === '7d' }"
+          @click="dateFilter = '7d'"
+        >
+          Last 7 days
+        </button>
+      </div>
     </section>
 
     <p v-if="isLoading" class="auth-form-message auth-form-message--info">Loading your reports…</p>
@@ -109,7 +298,14 @@ const signedInUserName = computed(() => displayName.value);
         </thead>
         <tbody>
           <tr v-if="rows.length === 0">
-            <td colspan="5">No reports yet.</td>
+            <td colspan="5">
+              <div class="report-empty-state">
+                <p>No reports match these filters.</p>
+                <button type="button" class="secondary-btn small" @click="goToRecording">
+                  Start recording
+                </button>
+              </div>
+            </td>
           </tr>
           <tr v-for="row in rows" :key="row.id">
             <td>{{ row.title }}</td>
@@ -119,10 +315,10 @@ const signedInUserName = computed(() => displayName.value);
               <span :class="['status-badge', row.tone]">{{ row.status }}</span>
             </td>
             <td class="actions-cell">
-              <button class="ghost-btn" type="button" title="Edit" disabled>
+              <button class="ghost-btn" type="button" title="Edit" @click="openEditModal(row)">
                 <font-awesome-icon :icon="['fas', 'pen-to-square']" />
               </button>
-              <button class="ghost-btn" type="button" title="Delete" disabled>
+              <button class="ghost-btn" type="button" title="Delete" @click="openDeleteModal(row)">
                 <font-awesome-icon :icon="['fas', 'trash-can']" />
               </button>
             </td>
@@ -130,5 +326,109 @@ const signedInUserName = computed(() => displayName.value);
         </tbody>
       </table>
     </section>
+
+    <div v-if="editTarget" class="admin-modal-backdrop" @click.self="closeEditModal">
+      <div class="admin-modal-card clinician-report-modal" role="dialog" aria-labelledby="dash-edit-title">
+        <div class="admin-modal-head">
+          <span class="admin-modal-chip">
+            <font-awesome-icon :icon="['fas', 'pen-to-square']" />
+          </span>
+          <h3 id="dash-edit-title">Edit report</h3>
+        </div>
+        <p class="clinician-report-modal-lead">
+          <strong>{{ editTarget.title }}</strong>
+        </p>
+        <p class="clinician-report-modal-meta">
+          {{ editTarget.sessionType }} · {{ editTarget.timestamp }}
+        </p>
+        <p>Open this report to review or update the transcription and clinical note.</p>
+        <div class="admin-modal-actions">
+          <button type="button" class="admin-modal-btn ghost" @click="closeEditModal">Cancel</button>
+          <button type="button" class="admin-modal-btn create" @click="confirmOpenReport">
+            Open report
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="deleteTarget" class="admin-modal-backdrop" @click.self="closeDeleteModal">
+      <div class="admin-modal-card clinician-report-modal" role="dialog" aria-labelledby="dash-delete-title">
+        <div class="admin-modal-head">
+          <span class="admin-modal-chip clinician-report-modal-chip--danger">
+            <font-awesome-icon :icon="['fas', 'trash-can']" />
+          </span>
+          <h3 id="dash-delete-title">Delete report</h3>
+        </div>
+        <p class="clinician-report-modal-lead">
+          Remove <strong>{{ deleteTarget.title }}</strong>?
+        </p>
+        <p>This permanently deletes the report and its transcription. This cannot be undone.</p>
+        <p v-if="deleteError" class="save-error" role="alert">{{ deleteError }}</p>
+        <div class="admin-modal-actions">
+          <button
+            type="button"
+            class="admin-modal-btn ghost"
+            :disabled="deleteInProgress"
+            @click="closeDeleteModal"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="admin-modal-btn clinician-modal-btn-danger"
+            :disabled="deleteInProgress"
+            @click="confirmDeleteReport"
+          >
+            {{ deleteInProgress ? "Deleting…" : "Delete" }}
+          </button>
+        </div>
+      </div>
+    </div>
   </AppShell>
 </template>
+
+<style scoped>
+.clinician-report-modal h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #1e293b;
+}
+
+.clinician-report-modal-lead {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: #334155;
+}
+
+.clinician-report-modal-meta {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.clinician-report-modal p:not(.clinician-report-modal-lead):not(.clinician-report-modal-meta):not(.save-error) {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.clinician-report-modal-chip--danger {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.clinician-modal-btn-danger {
+  background: #ef4444;
+  color: #fff;
+}
+
+.clinician-modal-btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.save-error {
+  color: #b42318;
+  font-size: 14px;
+}
+</style>

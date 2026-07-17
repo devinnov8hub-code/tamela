@@ -1,6 +1,6 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppShell from "../components/AppShell.vue";
 import { useAuth } from "../composables/useAuth.js";
@@ -66,6 +66,7 @@ const savedSnapshot = ref("");
 const isDirty = ref(false);
 const saveInProgress = ref(false);
 const autoSaveInProgress = ref(false);
+const noteSearchQuery = ref("");
 
 const last = getLastTranscription();
 if (last?.text) transcriptText.value = last.text;
@@ -109,9 +110,49 @@ const exportNotePayload = computed(() => ({
   disclaimerShort: AI_DISCLAIMER_SHORT,
 }));
 
+/** Smart Copy omits the disclaimer so clinicians can paste the note cleanly. */
+const copyNotePayload = computed(() => {
+  const { disclaimerShort: _omit, ...rest } = exportNotePayload.value;
+  return rest;
+});
+
 const exportableText = computed(() => buildClinicalNotePlainText(exportNotePayload.value));
 
 const exportableHtml = computed(() => buildClinicalNoteHtml(exportNotePayload.value));
+
+const copyableText = computed(() => buildClinicalNotePlainText(copyNotePayload.value));
+
+const copyableHtml = computed(() => buildClinicalNoteHtml(copyNotePayload.value));
+
+function blockPlainText(block) {
+  const body = String(block?.html ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${block?.heading ?? ""} ${body}`.toLowerCase();
+}
+
+const noteSearchActive = computed(() => Boolean(noteSearchQuery.value.trim()));
+
+const noteSearchMatchCount = computed(() => {
+  const q = noteSearchQuery.value.trim().toLowerCase();
+  if (!q) return 0;
+  return reportBlocks.value.filter((block) => blockPlainText(block).includes(q)).length;
+});
+
+function blockMatchesSearch(block) {
+  const q = noteSearchQuery.value.trim().toLowerCase();
+  if (!q) return true;
+  return blockPlainText(block).includes(q);
+}
+
+watch(noteSearchQuery, async (query) => {
+  if (!query.trim()) return;
+  await nextTick();
+  document
+    .querySelector(".transcription-note-section--match")
+    ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
 
 function applyReportResponse(normalized) {
   reportMeta.value = {
@@ -409,7 +450,7 @@ async function handleSmartCopy() {
   actionMessage.value = "";
 
   try {
-    await copyRichTextToClipboard(exportableHtml.value, exportableText.value);
+    await copyRichTextToClipboard(copyableHtml.value, copyableText.value);
     flashAction("Copied to clipboard.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Copy failed.");
@@ -558,15 +599,34 @@ async function loadTranscription() {
   }
 }
 
-onMounted(loadTranscription);
+function onBeforeUnload(event) {
+  if (!isDirty.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+onMounted(() => {
+  loadTranscription();
+  window.addEventListener("beforeunload", onBeforeUnload);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", onBeforeUnload);
+});
+
+onBeforeRouteLeave(() => {
+  if (!isDirty.value) return true;
+  return window.confirm("You have unsaved changes. Leave without saving?");
+});
 </script>
 
 <template>
   <AppShell
+    v-model:search-value="noteSearchQuery"
     title="Clinical Report"
     subtitle="Review and edit your generated note"
     active-nav="Active Recording"
-    search-placeholder="Search"
+    search-placeholder="Find in note…"
     wide-search
   >
     <section class="transcription-toolbar editor-toolbar">
@@ -746,10 +806,25 @@ onMounted(loadTranscription);
             <p class="transcription-paragraph">{{ errorText }}</p>
           </template>
           <template v-else-if="reportBlocks.length">
+            <p
+              v-if="noteSearchActive"
+              class="transcription-search-status"
+              role="status"
+            >
+              {{
+                noteSearchMatchCount === 0
+                  ? "No matching sections."
+                  : `${noteSearchMatchCount} matching section${noteSearchMatchCount === 1 ? "" : "s"}`
+              }}
+            </p>
             <section
               v-for="(block, index) in reportBlocks"
               :key="`${reportContentKey}-${index}`"
               class="transcription-note-section"
+              :class="{
+                'transcription-note-section--match': noteSearchActive && blockMatchesSearch(block),
+                'transcription-note-section--dimmed': noteSearchActive && !blockMatchesSearch(block),
+              }"
             >
               <h4 class="transcription-section-heading">{{ block.heading }}</h4>
               <div
@@ -852,6 +927,22 @@ onMounted(loadTranscription);
 
 .report-block-editor:focus {
   box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.18);
+  border-radius: 8px;
+}
+
+.transcription-search-status {
+  margin: 0 0 12px;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.transcription-note-section--dimmed {
+  opacity: 0.35;
+}
+
+.transcription-note-section--match {
+  outline: 2px solid rgba(46, 120, 233, 0.35);
+  outline-offset: 6px;
   border-radius: 8px;
 }
 

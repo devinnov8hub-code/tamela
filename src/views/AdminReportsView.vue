@@ -5,10 +5,13 @@ import { useQuery } from "@tanstack/vue-query";
 import AdminShell from "../components/AdminShell.vue";
 import { useAuth } from "../composables/useAuth.js";
 import { fetchReportsByHospital } from "../services/reportService.js";
+import { matchesDateFilter, matchesStatusFilter } from "../utils/reportListFilters.js";
 
 const router = useRouter();
 const { hospitalId } = useAuth();
 const searchTerm = ref("");
+const statusFilter = ref("all");
+const dateFilter = ref("all");
 
 const {
   data: reportsData,
@@ -29,27 +32,29 @@ const reports = computed(() => reportsData.value ?? []);
 
 const filteredReports = computed(() => {
   const query = searchTerm.value.trim().toLowerCase();
-  const list = reports.value;
-  if (!query) return list;
 
-  return list.filter((report) =>
-    [
-      report.clinicianName,
-      report.email,
-      report.caseTitle,
-      report.reportId,
-      report.department,
-      report.status,
-    ].some((field) => String(field).toLowerCase().includes(query))
-  );
+  return reports.value
+    .filter((report) => matchesStatusFilter(report.status, statusFilter.value))
+    .filter((report) => matchesDateFilter(report.createdAt, dateFilter.value))
+    .filter((report) => {
+      if (!query) return true;
+      return [
+        report.clinicianName,
+        report.email,
+        report.caseTitle,
+        report.reportId,
+        report.department,
+        report.status,
+      ].some((field) => String(field).toLowerCase().includes(query));
+    });
 });
 
-const totalReports = computed(() => filteredReports.value.length.toLocaleString());
+const totalReports = computed(() => reports.value.length.toLocaleString());
 const processingNow = computed(() =>
-  filteredReports.value.filter((item) => item.status === "processing").length.toLocaleString()
+  reports.value.filter((item) => item.status === "processing").length.toLocaleString()
 );
 const completedCount = computed(() =>
-  filteredReports.value.filter((item) => item.status === "completed").length.toLocaleString()
+  reports.value.filter((item) => item.status === "completed").length.toLocaleString()
 );
 
 function statusLabel(status) {
@@ -96,6 +101,69 @@ function openTranscription(report) {
         </article>
       </section>
 
+      <section class="report-filters" aria-label="Filter reports">
+        <div class="report-filter-group" role="group" aria-label="Status">
+          <button
+            type="button"
+            class="report-filter-chip"
+            :class="{ active: statusFilter === 'all' }"
+            @click="statusFilter = 'all'"
+          >
+            All
+          </button>
+          <button
+            type="button"
+            class="report-filter-chip"
+            :class="{ active: statusFilter === 'needs_review' }"
+            @click="statusFilter = 'needs_review'"
+          >
+            Needs review
+          </button>
+          <button
+            type="button"
+            class="report-filter-chip"
+            :class="{ active: statusFilter === 'processing' }"
+            @click="statusFilter = 'processing'"
+          >
+            Processing
+          </button>
+          <button
+            type="button"
+            class="report-filter-chip"
+            :class="{ active: statusFilter === 'completed' }"
+            @click="statusFilter = 'completed'"
+          >
+            Completed
+          </button>
+        </div>
+        <div class="report-filter-group" role="group" aria-label="Date">
+          <button
+            type="button"
+            class="report-filter-chip"
+            :class="{ active: dateFilter === 'all' }"
+            @click="dateFilter = 'all'"
+          >
+            All time
+          </button>
+          <button
+            type="button"
+            class="report-filter-chip"
+            :class="{ active: dateFilter === 'today' }"
+            @click="dateFilter = 'today'"
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            class="report-filter-chip"
+            :class="{ active: dateFilter === '7d' }"
+            @click="dateFilter = '7d'"
+          >
+            Last 7 days
+          </button>
+        </div>
+      </section>
+
       <p v-if="isLoading" class="auth-form-message auth-form-message--info">Loading reports…</p>
       <p v-else-if="isError" class="auth-form-message" role="alert">
         {{ loadError?.message || "Could not load reports." }}
@@ -114,7 +182,7 @@ function openTranscription(report) {
           </thead>
           <tbody>
             <tr v-if="filteredReports.length === 0">
-              <td colspan="5">No reports found for this hospital.</td>
+              <td colspan="5">No reports match these filters.</td>
             </tr>
             <tr v-for="report in filteredReports" :key="report.id" class="admin-user-row">
               <td>

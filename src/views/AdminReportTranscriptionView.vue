@@ -86,12 +86,27 @@ const exportNotePayload = computed(() => {
   };
 });
 
+/** Smart Copy omits the disclaimer so the note pastes cleanly. */
+const copyNotePayload = computed(() => {
+  if (!exportNotePayload.value) return null;
+  const { disclaimerShort: _omit, ...rest } = exportNotePayload.value;
+  return rest;
+});
+
 const exportableText = computed(() =>
   exportNotePayload.value ? buildClinicalNotePlainText(exportNotePayload.value) : ""
 );
 
 const exportableHtml = computed(() =>
   exportNotePayload.value ? buildClinicalNoteHtml(exportNotePayload.value) : ""
+);
+
+const copyableText = computed(() =>
+  copyNotePayload.value ? buildClinicalNotePlainText(copyNotePayload.value) : ""
+);
+
+const copyableHtml = computed(() =>
+  copyNotePayload.value ? buildClinicalNoteHtml(copyNotePayload.value) : ""
 );
 
 const exportDisabled = computed(
@@ -118,7 +133,7 @@ async function handleSmartCopy() {
   actionMessage.value = "";
 
   try {
-    await copyRichTextToClipboard(exportableHtml.value, exportableText.value);
+    await copyRichTextToClipboard(copyableHtml.value, copyableText.value);
     flashAction("Copied to clipboard.");
   } catch (error) {
     flashAction(error instanceof Error ? error.message : "Copy failed.");

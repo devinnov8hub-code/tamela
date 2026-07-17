@@ -11,12 +11,15 @@ import {
 } from "../services/reportService.js";
 import { getLastSavedReportId, setLastSavedReportId } from "../session/scribeSession.js";
 import { formatClinicianReportTimestamp } from "../utils/formatDateTime.js";
+import { matchesDateFilter, matchesStatusFilter } from "../utils/reportListFilters.js";
 
 const router = useRouter();
 const queryClient = useQueryClient();
 const { displayName, hospitalId, user } = useAuth();
 
 const searchQuery = ref("");
+const statusFilter = ref("all");
+const dateFilter = ref("all");
 const editTarget = ref(null);
 const deleteTarget = ref(null);
 const deleteInProgress = ref(false);
@@ -74,6 +77,8 @@ function statusLabel(status) {
 const tableRows = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   return reports.value
+    .filter((row) => matchesStatusFilter(row.status, statusFilter.value))
+    .filter((row) => matchesDateFilter(row.createdAt, dateFilter.value))
     .filter((row) => {
       if (!q) return true;
       const haystack = [
@@ -95,6 +100,10 @@ const tableRows = computed(() => {
       statusLabel: statusLabel(row.status),
     }));
 });
+
+function goToRecording() {
+  router.push({ name: "clinician-recording-fresh" });
+}
 
 function openEditModal(row) {
   editTarget.value = row;
@@ -214,6 +223,69 @@ function exportToCsv() {
       </article>
     </section>
 
+    <section class="report-filters" aria-label="Filter reports">
+      <div class="report-filter-group" role="group" aria-label="Status">
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'all' }"
+          @click="statusFilter = 'all'"
+        >
+          All
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'needs_review' }"
+          @click="statusFilter = 'needs_review'"
+        >
+          Needs review
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'processing' }"
+          @click="statusFilter = 'processing'"
+        >
+          Processing
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: statusFilter === 'completed' }"
+          @click="statusFilter = 'completed'"
+        >
+          Completed
+        </button>
+      </div>
+      <div class="report-filter-group" role="group" aria-label="Date">
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: dateFilter === 'all' }"
+          @click="dateFilter = 'all'"
+        >
+          All time
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: dateFilter === 'today' }"
+          @click="dateFilter = 'today'"
+        >
+          Today
+        </button>
+        <button
+          type="button"
+          class="report-filter-chip"
+          :class="{ active: dateFilter === '7d' }"
+          @click="dateFilter = '7d'"
+        >
+          Last 7 days
+        </button>
+      </div>
+    </section>
+
     <p v-if="isLoading" class="auth-form-message auth-form-message--info">Loading reports…</p>
     <p v-else-if="isError" class="auth-form-message" role="alert">
       {{ loadError?.message || "Could not load reports." }}
@@ -231,7 +303,14 @@ function exportToCsv() {
         </thead>
         <tbody>
           <tr v-if="tableRows.length === 0">
-            <td colspan="4" class="clinician-reports-empty">No reports found.</td>
+            <td colspan="4" class="clinician-reports-empty">
+              <div class="report-empty-state">
+                <p>No reports match these filters.</p>
+                <button type="button" class="secondary-btn small" @click="goToRecording">
+                  Start recording
+                </button>
+              </div>
+            </td>
           </tr>
           <tr v-for="row in tableRows" :key="row.id">
             <td class="col-case-title">{{ row.caseTitle }}</td>

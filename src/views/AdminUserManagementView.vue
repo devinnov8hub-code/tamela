@@ -87,8 +87,12 @@ const filteredClinicians = computed(() => {
 });
 
 const totalClinicians = computed(() => clinicians.value.length.toLocaleString());
-const activeNow = computed(() => clinicians.value.filter((row) => row.status === "active").length.toLocaleString());
-const pendingInvites = computed(() => "0");
+const activeNow = computed(() =>
+  clinicians.value.filter((row) => row.status === "active").length.toLocaleString()
+);
+const suspendedCount = computed(() =>
+  clinicians.value.filter((row) => row.status === "suspended").length.toLocaleString()
+);
 
 const passwordInputType = computed(() => (passwordVisible.value ? "text" : "password"));
 
@@ -254,9 +258,9 @@ watch(showAddModal, (open) => {
         <h3>{{ activeNow }}</h3>
       </article>
       <article class="admin-user-metric-card">
-        <span class="admin-metric-icon-wrap amber"><font-awesome-icon :icon="['fas', 'clock']" /></span>
-        <p>Pending Invites</p>
-        <h3>{{ pendingInvites }}</h3>
+        <span class="admin-metric-icon-wrap amber"><font-awesome-icon :icon="['fas', 'user-slash']" /></span>
+        <p>Suspended</p>
+        <h3>{{ suspendedCount }}</h3>
       </article>
     </section>
 

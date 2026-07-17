@@ -763,6 +763,56 @@ th {
   padding: 28px 18px !important;
 }
 
+.report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  margin: 0 0 16px;
+}
+
+.report-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.report-filter-chip {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.report-filter-chip:hover {
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.report-filter-chip.active {
+  border-color: #2e78e9;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.report-empty-state {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding: 8px 0;
+}
+
+.report-empty-state p {
+  margin: 0;
+  color: #94a3b8;
+}
+
 .report-action-btn {
   width: 36px;
   height: 36px;

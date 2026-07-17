@@ -337,7 +337,7 @@ export function htmlToPlainText(html) {
     .trim();
 }
 
-/** Short AI disclaimer included in Smart Copy / PDF (full text stays in the UI modal). */
+/** Short AI disclaimer included in PDF export (full text stays in the UI modal; Smart Copy omits it). */
 export const AI_DISCLAIMER_SHORT =
   "AI-Generated Draft — Clinician review required before clinical use.";
 
