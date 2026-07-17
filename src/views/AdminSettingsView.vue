@@ -325,13 +325,19 @@ async function handleAddSpecialty() {
     <section class="admin-settings-stack">
       <article class="admin-settings-card">
         <header class="admin-settings-head">
-          <h3><font-awesome-icon :icon="['fas', 'file-lines']" /> Hospital Identity</h3>
+          <span class="admin-settings-icon blue" aria-hidden="true">
+            <font-awesome-icon :icon="['fas', 'file-lines']" />
+          </span>
+          <div class="admin-settings-head-text">
+            <h3>Hospital Identity</h3>
+            <p>Logo and legal name used across the hospital workspace.</p>
+          </div>
         </header>
         <div class="admin-settings-body">
           <p v-if="hospitalLoading" class="auth-form-message auth-form-message--info">Loading hospital…</p>
 
           <div class="admin-identity-grid">
-            <div>
+            <div class="admin-identity-logo">
               <label>Hospital logo</label>
               <input
                 ref="logoInput"
@@ -355,16 +361,16 @@ async function handleAddSpecialty() {
                   alt="Hospital logo preview"
                   class="admin-logo-preview"
                 />
-                <template v-else>
+                <span v-else class="admin-logo-upload-placeholder">
                   <font-awesome-icon :icon="['fas', 'plus']" />
-                  <strong>UPLOAD LOGO</strong>
-                </template>
+                  <strong>Upload logo</strong>
+                </span>
               </button>
-              <small>PNG or JPG. Max 2MB</small>
+              <small>PNG, JPG, or WebP · Max 2MB</small>
             </div>
             <div class="admin-identity-fields">
               <label>
-                Hospital Legal Name
+                Hospital legal name
                 <input
                   v-model="identityForm.legalName"
                   type="text"
@@ -387,92 +393,110 @@ async function handleAddSpecialty() {
               :disabled="identitySaving || hospitalLoading"
               @click="handleSaveIdentity"
             >
-              {{ identitySaving ? "Saving…" : "Save Changes" }}
+              {{ identitySaving ? "Saving…" : "Save changes" }}
             </button>
           </div>
         </div>
       </article>
 
-      <article class="admin-settings-card">
-        <header class="admin-settings-head admin-settings-head--split">
-          <h3><font-awesome-icon :icon="['fas', 'users']" /> Departments</h3>
-          <p class="admin-settings-subtext">Add departments for your hospital. They appear when registering clinicians.</p>
-        </header>
-        <div class="admin-settings-body">
-          <p v-if="departmentsLoading" class="auth-form-message auth-form-message--info">Loading departments…</p>
-
-          <form class="admin-department-add" @submit.prevent="handleAddDepartment">
-            <label for="new-department-name">New department</label>
-            <div class="admin-department-add-row">
-              <input
-                id="new-department-name"
-                v-model="newDepartmentName"
-                type="text"
-                placeholder="e.g. Radiology, Cardiology, ER"
-                :disabled="departmentSaving"
-              />
-              <button type="submit" class="admin-settings-btn" :disabled="departmentSaving">
-                {{ departmentSaving ? "Adding…" : "Add Department" }}
-              </button>
+      <div class="admin-settings-pair">
+        <article class="admin-settings-card">
+          <header class="admin-settings-head">
+            <span class="admin-settings-icon purple" aria-hidden="true">
+              <font-awesome-icon :icon="['fas', 'users']" />
+            </span>
+            <div class="admin-settings-head-text">
+              <h3>Departments</h3>
+              <p>Shown when registering clinicians.</p>
             </div>
-            <p v-if="departmentError" class="auth-form-message" role="alert">{{ departmentError }}</p>
-          </form>
+          </header>
+          <div class="admin-settings-body">
+            <p v-if="departmentsLoading" class="auth-form-message auth-form-message--info">
+              Loading departments…
+            </p>
 
-          <ul v-if="departments.length" class="admin-department-list">
-            <li v-for="dept in departments" :key="dept.id">
-              <span>{{ dept.name }}</span>
-            </li>
-          </ul>
-          <p v-else-if="!departmentsLoading" class="admin-settings-empty">No departments yet. Add your first department above.</p>
-        </div>
-      </article>
+            <form class="admin-department-add" @submit.prevent="handleAddDepartment">
+              <label for="new-department-name">New department</label>
+              <div class="admin-department-add-row">
+                <input
+                  id="new-department-name"
+                  v-model="newDepartmentName"
+                  type="text"
+                  placeholder="e.g. Radiology, Cardiology, ER"
+                  :disabled="departmentSaving"
+                />
+                <button type="submit" class="admin-settings-btn" :disabled="departmentSaving">
+                  {{ departmentSaving ? "Adding…" : "Add" }}
+                </button>
+              </div>
+              <p v-if="departmentError" class="auth-form-message" role="alert">{{ departmentError }}</p>
+            </form>
 
-      <article class="admin-settings-card">
-        <header class="admin-settings-head admin-settings-head--split">
-          <h3><font-awesome-icon :icon="['fas', 'user-doctor']" /> Specialties</h3>
-          <p class="admin-settings-subtext">
-            Specialties are per hospital. New names typed when registering a clinician are added automatically.
-          </p>
-        </header>
-        <div class="admin-settings-body">
-          <p v-if="specialtiesLoading" class="auth-form-message auth-form-message--info">Loading specialties…</p>
+            <ul v-if="departments.length" class="admin-settings-chips">
+              <li v-for="dept in departments" :key="dept.id">{{ dept.name }}</li>
+            </ul>
+            <p v-else-if="!departmentsLoading" class="admin-settings-empty">
+              No departments yet. Add your first one above.
+            </p>
+          </div>
+        </article>
 
-          <form class="admin-department-add" @submit.prevent="handleAddSpecialty">
-            <label for="new-specialty-name">New specialty</label>
-            <div class="admin-department-add-row">
-              <input
-                id="new-specialty-name"
-                v-model="newSpecialtyName"
-                type="text"
-                placeholder="e.g. Sonography, Cardiology"
-                :disabled="specialtySaving"
-              />
-              <button type="submit" class="admin-settings-btn" :disabled="specialtySaving">
-                {{ specialtySaving ? "Adding…" : "Add Specialty" }}
-              </button>
+        <article class="admin-settings-card">
+          <header class="admin-settings-head">
+            <span class="admin-settings-icon amber" aria-hidden="true">
+              <font-awesome-icon :icon="['fas', 'user-doctor']" />
+            </span>
+            <div class="admin-settings-head-text">
+              <h3>Specialties</h3>
+              <p>Per hospital · also created during clinician signup.</p>
             </div>
-            <p v-if="specialtyError" class="auth-form-message" role="alert">{{ specialtyError }}</p>
-          </form>
+          </header>
+          <div class="admin-settings-body">
+            <p v-if="specialtiesLoading" class="auth-form-message auth-form-message--info">
+              Loading specialties…
+            </p>
 
-          <ul v-if="specialties.length" class="admin-department-list">
-            <li v-for="item in specialties" :key="item.id">
-              <span>{{ item.name }}</span>
-            </li>
-          </ul>
-          <p v-else-if="!specialtiesLoading" class="admin-settings-empty">
-            No specialties yet. Add one above or when registering a clinician.
-          </p>
-        </div>
-      </article>
+            <form class="admin-department-add" @submit.prevent="handleAddSpecialty">
+              <label for="new-specialty-name">New specialty</label>
+              <div class="admin-department-add-row">
+                <input
+                  id="new-specialty-name"
+                  v-model="newSpecialtyName"
+                  type="text"
+                  placeholder="e.g. Sonography, Cardiology"
+                  :disabled="specialtySaving"
+                />
+                <button type="submit" class="admin-settings-btn" :disabled="specialtySaving">
+                  {{ specialtySaving ? "Adding…" : "Add" }}
+                </button>
+              </div>
+              <p v-if="specialtyError" class="auth-form-message" role="alert">{{ specialtyError }}</p>
+            </form>
+
+            <ul v-if="specialties.length" class="admin-settings-chips">
+              <li v-for="item in specialties" :key="item.id">{{ item.name }}</li>
+            </ul>
+            <p v-else-if="!specialtiesLoading" class="admin-settings-empty">
+              No specialties yet. Add one above or when registering a clinician.
+            </p>
+          </div>
+        </article>
+      </div>
 
       <article class="admin-settings-card">
         <header class="admin-settings-head">
-          <h3><font-awesome-icon :icon="['fas', 'user-gear']" /> Security &amp; Account</h3>
+          <span class="admin-settings-icon green" aria-hidden="true">
+            <font-awesome-icon :icon="['fas', 'user-gear']" />
+          </span>
+          <div class="admin-settings-head-text">
+            <h3>Security &amp; account</h3>
+            <p>Update the password for your administrator account.</p>
+          </div>
         </header>
         <div class="admin-settings-body">
           <div class="admin-settings-grid">
-            <label>
-              Current Password
+            <label class="admin-settings-field-span">
+              Current password
               <input
                 v-model="securityForm.currentPassword"
                 type="password"
@@ -481,24 +505,23 @@ async function handleAddSpecialty() {
                 :disabled="passwordSaving"
               />
             </label>
-            <span></span>
             <label>
-              New Password
+              New password
               <input
                 v-model="securityForm.newPassword"
                 type="password"
                 autocomplete="new-password"
-                placeholder="Enter New Password"
+                placeholder="At least 8 characters"
                 :disabled="passwordSaving"
               />
             </label>
             <label>
-              Confirm New Password
+              Confirm new password
               <input
                 v-model="securityForm.confirmNewPassword"
                 type="password"
                 autocomplete="new-password"
-                placeholder="Repeat New Password"
+                placeholder="Repeat new password"
                 :disabled="passwordSaving"
               />
             </label>
@@ -514,7 +537,7 @@ async function handleAddSpecialty() {
               :disabled="passwordSaving"
               @click="handleUpdatePassword"
             >
-              {{ passwordSaving ? "Updating…" : "Update Password" }}
+              {{ passwordSaving ? "Updating…" : "Update password" }}
             </button>
           </div>
         </div>
@@ -534,44 +557,5 @@ async function handleAddSpecialty() {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-.admin-logo-upload {
-  margin-top: 8px;
-  width: 150px;
-  height: 150px;
-  border-radius: 10px;
-  border: 1px dashed #d1d5db;
-  display: grid;
-  place-items: center;
-  color: #9ca3af;
-  text-align: center;
-  gap: 8px;
-  padding: 0;
-  background: #fff;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.admin-logo-upload:hover:not(:disabled) {
-  border-color: #94a3b8;
-  color: #64748b;
-}
-
-.admin-logo-upload:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.admin-logo-upload--has-image {
-  border-style: solid;
-}
-
-.admin-logo-preview {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  background: #fff;
 }
 </style>
